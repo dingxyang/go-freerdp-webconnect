@@ -141,7 +141,7 @@ echo -e "${GREEN}✓ FreeRDP 编译完成${NC}"
 # 4. 配置 Go 模块
 echo -e "\n${YELLOW}[4/5] 配置 Go 依赖...${NC}"
 cd "${PROJECT_ROOT}"
-go mod download
+go mod tidy
 echo -e "${GREEN}✓ Go 依赖下载完成${NC}"
 
 # 5. 编译 Go 项目
