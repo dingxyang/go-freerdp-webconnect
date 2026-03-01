@@ -304,6 +304,7 @@ table td {
 table td.buttons {
     padding-top: 18px;
     text-align: right;
+    vertical-align: middle;
 }
 
 table td.key {
@@ -326,11 +327,13 @@ table td.key {
 }
 
 #sizeHint {
-    display: block;
-    margin-top: 4px;
+    display: inline-block;
+    margin-right: auto;
     font-size: 11px;
     color: #9CA3AF;
     letter-spacing: 0.2px;
+    float: left;
+    line-height: 34px;
 }
 
 /* ── 连接按钮 ─────────────────────────────────────────── */
@@ -512,7 +515,6 @@ table td.key {
     border: 0;
     margin: 0;
     padding: 0;
-    background: black;
 }
 
 /* ── 错误提示 ─────────────────────────────────────────── */

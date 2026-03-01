@@ -303,21 +303,11 @@
                                             </td>
                                         </tr>
                                         <tr>
-                                            <td class="key"><label for="dtsize">桌面尺寸：</label></td>
-                                            <td>
-                                                <select id="dtsize" name="dtsize">
-                                                    <option>640x480</option>
-                                                    <option>800x600</option>
-                                                    <option>1024x768</option>
-                                                    <option>1280x960</option>
-                                                    <option>1280x1024</option>
-                                                    <option value="auto" selected>可用区域</option>
-                                                </select>
+                                            <td class="buttons" colspan="2">
+                                                <input id="dtsize" name="dtsize" type="hidden" value="auto" />
                                                 <span id="sizeHint"></span>
+                                                <input id="rdpconnect" type="button" value="连接" />
                                             </td>
-                                        </tr>
-                                        <tr>
-                                            <td class="buttons" colspan="2"><input id="rdpconnect" type="button" value="连接" /></td>
                                         </tr>
                                     </table>
                                 </fieldset>
