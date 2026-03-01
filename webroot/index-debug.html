@@ -17,7 +17,7 @@
         <script src="js/wsgate-debug.js"></script>
         <script src="js/vkb-debug.js"></script>
         <script language="javascript" type="text/javascript">
-            var wsBase = "ws://localhost:4455";
+            var wsBase = "ws://localhost:4455/ws";
             var RIMtablet = navigator.appVersion && (-1 != navigator.appVersion.indexOf('RIM Tablet'));
             var mhx = 100;
             var mhy = 100;
@@ -254,15 +254,15 @@
                                     <table>
                                         <tr>
                                             <td class="key"><label for="host">Hostname:</label></td>
-                                            <td><input id="rdphost" type="text" name="host" value="%COOKIE_LASTHOST%" %DISABLED_HOST%/></td>
+                                            <td><input id="rdphost" type="text" name="host" value="10.88.16.102" /></td>
                                         </tr>
                                         <tr>
                                             <td class="key"><label for="user">User:</label></td>
-                                            <td><input id="rdpuser" type="text" name="user" value="%COOKIE_LASTUSER%" %DISABLED_USER% /></td>
+                                            <td><input id="rdpuser" type="text" name="user" value="administrator" /></td>
                                         </tr>
                                         <tr>
                                             <td class="key"><label for="pass">Password:</label></td>
-                                            <td><input id="rdppass" type="password" name="pass" value="%COOKIE_LASTPASS%" autocomplete="off" %DISABLED_PASS% /></td>
+                                            <td><input id="rdppass" type="password" name="pass" value="abc@123ABCDE" autocomplete="off" /></td>
                                         </tr>
                                         <tr>
                                             <td class="key"><label for="dtsize">Desktop size:</label></td>
@@ -292,7 +292,7 @@
                                     <table>
                                         <tr>
                                             <td class="key"><label for="port">Port:</label></td>
-                                            <td><input id="port" name="port" type="text" size="6" maxlen="5" value="%DEFAULT_PORT%" %DISABLED_PORT% /></td>
+                                            <td><input id="port" name="port" type="text" size="6" maxlen="5" value="53389" /></td>
                                         </tr>
                                         <tr>
                                             <td class="key"><label for="perf">Performance:</label></td>

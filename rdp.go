@@ -1,57 +1,89 @@
 package main
 
 /*
-#cgo LDFLAGS: -L. -lfreerdp-core -lfreerdp-codec -lfreerdp-gdi
+#cgo CFLAGS: -I${SRCDIR}/install/include/freerdp3 -I${SRCDIR}/install/include/winpr3
+#cgo LDFLAGS: -L${SRCDIR}/install/lib -lfreerdp3 -lfreerdp-client3 -lwinpr3
 #include <freerdp/freerdp.h>
 #include <freerdp/codec/color.h>
 #include <freerdp/gdi/gdi.h>
+#include <freerdp/settings.h>
 #include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
+
+// Helper function to convert color using FreeRDP 3.x API
+static inline UINT32 convertColor(UINT32 color, UINT32 srcBpp, UINT32 dstBpp) {
+    UINT32 srcFormat = (srcBpp == 16) ? PIXEL_FORMAT_RGB16 : PIXEL_FORMAT_BGRX32;
+    UINT32 dstFormat = (dstBpp == 32) ? PIXEL_FORMAT_BGRX32 : PIXEL_FORMAT_RGB16;
+    return FreeRDPConvertColor(color, srcFormat, dstFormat, NULL);
+}
+
+// Helper function to flip image data
+static inline void flipImageData(BYTE* data, int width, int height, int bpp) {
+    int scanline = width * (bpp / 8);
+    BYTE* tmpLine = (BYTE*)malloc(scanline);
+    if (!tmpLine) return;
+    for (int i = 0; i < height / 2; i++) {
+        BYTE* line1 = data + (i * scanline);
+        BYTE* line2 = data + ((height - 1 - i) * scanline);
+        memcpy(tmpLine, line1, scanline);
+        memcpy(line1, line2, scanline);
+        memcpy(line2, tmpLine, scanline);
+    }
+    free(tmpLine);
+}
+
+// Helper function to get settings from instance
+static inline rdpSettings* getSettings(freerdp* instance) {
+    return instance->context->settings;
+}
 
 extern BOOL preConnect(freerdp* instance);
 extern void postConnect(freerdp* instance);
 extern void goPrintln(char* text);
 extern void goEcho(char* text, rdpContext* context);
 extern size_t getPointerSize();
-extern void primaryPatBlt(rdpContext* context, PATBLT_ORDER* patblt);
-extern void primaryScrBlt(rdpContext* context, SCRBLT_ORDER* scrblt);
-extern void primaryOpaqueRect(rdpContext* context, OPAQUE_RECT_ORDER* oro);
-extern void primaryMultiOpaqueRect(rdpContext* context, MULTI_OPAQUE_RECT_ORDER* moro);
-extern void beginPaint(rdpContext* context);
-extern void endPaint(rdpContext* context);
-extern void setBounds(rdpContext* context, rdpBounds* bounds);
-extern void bitmapUpdate(rdpContext* context, BITMAP_UPDATE* bitmap);
+extern BOOL primaryPatBlt(rdpContext* context, PATBLT_ORDER* patblt);
+extern BOOL primaryScrBlt(rdpContext* context, SCRBLT_ORDER* scrblt);
+extern BOOL primaryOpaqueRect(rdpContext* context, OPAQUE_RECT_ORDER* oro);
+extern BOOL primaryMultiOpaqueRect(rdpContext* context, MULTI_OPAQUE_RECT_ORDER* moro);
+extern BOOL beginPaint(rdpContext* context);
+extern BOOL endPaint(rdpContext* context);
+extern BOOL setBounds(rdpContext* context, rdpBounds* bounds);
+extern BOOL bitmapUpdate(rdpContext* context, BITMAP_UPDATE* bitmap);
 
-static void cbPrimaryPatBlt(rdpContext* context, PATBLT_ORDER* patblt) {
-	primaryPatBlt(context, patblt);
-}
-
-static void cbPrimaryScrBlt(rdpContext* context, SCRBLT_ORDER* scrblt) {
-	primaryScrBlt(context, scrblt);
+static BOOL cbPrimaryPatBlt(rdpContext* context, PATBLT_ORDER* patblt) {
+	return primaryPatBlt(context, patblt);
 }
 
-static void cbPrimaryOpaqueRect(rdpContext* context, OPAQUE_RECT_ORDER* oro) {
-	primaryOpaqueRect(context, oro);
+static BOOL cbPrimaryScrBlt(rdpContext* context, const SCRBLT_ORDER* scrblt) {
+	return primaryScrBlt(context, (SCRBLT_ORDER*)scrblt);
 }
 
-static void cbPrimaryMultiOpaqueRect(rdpContext* context, MULTI_OPAQUE_RECT_ORDER* moro) {
-	primaryMultiOpaqueRect(context, moro);
+static BOOL cbPrimaryOpaqueRect(rdpContext* context, const OPAQUE_RECT_ORDER* oro) {
+	return primaryOpaqueRect(context, (OPAQUE_RECT_ORDER*)oro);
 }
 
-static void cbBeginPaint(rdpContext* context) {
-	//beginPaint(context);
+static BOOL cbPrimaryMultiOpaqueRect(rdpContext* context, const MULTI_OPAQUE_RECT_ORDER* moro) {
+	return primaryMultiOpaqueRect(context, (MULTI_OPAQUE_RECT_ORDER*)moro);
 }
-static void cbEndPaint(rdpContext* context) {
-	//endPaint(context);
+
+static BOOL cbBeginPaint(rdpContext* context) {
+	return beginPaint(context);
 }
-static void cbSetBounds(rdpContext* context, rdpBounds* bounds) {
-	//setBounds(context, bounds);
+static BOOL cbEndPaint(rdpContext* context) {
+	return endPaint(context);
 }
-static void cbBitmapUpdate(rdpContext* context, BITMAP_UPDATE* bitmap) {
-	bitmapUpdate(context, bitmap);
+static BOOL cbSetBounds(rdpContext* context, const rdpBounds* bounds) {
+	return setBounds(context, (rdpBounds*)bounds);
+}
+static BOOL cbBitmapUpdate(rdpContext* context, const BITMAP_UPDATE* bitmap) {
+	return bitmapUpdate(context, (BITMAP_UPDATE*)bitmap);
 }
 
 static BOOL cbPreConnect(freerdp* instance) {
-	rdpUpdate* update = instance->update;
+	rdpContext* context = instance->context;
+	rdpUpdate* update = context->update;
 	rdpPrimaryUpdate* primary = update->primary;
 
 	primary->PatBlt = cbPrimaryPatBlt;
@@ -166,11 +198,11 @@ type rdpConnectionSettings struct {
 	password *string
 	width    int
 	height   int
+	port     int
 }
 
 type rdpContext struct {
 	_p       C.rdpContext
-	clrconv  C.HCLRCONV
 	recvq    chan []byte
 	sendq    chan []byte
 	settings *rdpConnectionSettings
@@ -250,35 +282,37 @@ func getPointerSize() C.size_t {
 }
 
 //export primaryPatBlt
-func primaryPatBlt(rawContext *C.rdpContext, patblt *C.PATBLT_ORDER) {
+func primaryPatBlt(rawContext *C.rdpContext, patblt *C.PATBLT_ORDER) C.BOOL {
 	context := (*rdpContext)(unsafe.Pointer(rawContext))
 
-	hclrconv := context.clrconv
-
 	if C.GDI_BS_SOLID == patblt.brush.style {
+		// Convert color from 16-bit to 32-bit using FreeRDP 3.x API
+		color := uint32(C.convertColor(patblt.foreColor, 16, 32))
+
 		meta := primaryPatBltMeta{
 			WSOP_SC_PATBLT,
 			int32(patblt.nLeftRect),
 			int32(patblt.nTopRect),
 			int32(patblt.nWidth),
 			int32(patblt.nHeight),
-			uint32(C.freerdp_color_convert_var(patblt.foreColor, 16, 32, hclrconv)),
-			uint32(C.gdi_rop3_code(C.UINT8(patblt.bRop))),
+			color,
+			uint32(patblt.bRop),
 		}
 
 		buf := new(bytes.Buffer)
 		binary.Write(buf, binary.LittleEndian, meta)
 		sendBinary(context.sendq, buf)
 	}
+	return C.TRUE
 }
 
 //export primaryScrBlt
-func primaryScrBlt(rawContext *C.rdpContext, scrblt *C.SCRBLT_ORDER) {
+func primaryScrBlt(rawContext *C.rdpContext, scrblt *C.SCRBLT_ORDER) C.BOOL {
 	context := (*rdpContext)(unsafe.Pointer(rawContext))
 
 	meta := primaryScrBltMeta{
 		WSOP_SC_SCRBLT,
-		uint32(C.gdi_rop3_code(C.UINT8(scrblt.bRop))),
+		uint32(scrblt.bRop),
 		int32(scrblt.nLeftRect),
 		int32(scrblt.nTopRect),
 		int32(scrblt.nWidth),
@@ -290,30 +324,48 @@ func primaryScrBlt(rawContext *C.rdpContext, scrblt *C.SCRBLT_ORDER) {
 	buf := new(bytes.Buffer)
 	binary.Write(buf, binary.LittleEndian, meta)
 	sendBinary(context.sendq, buf)
+	return C.TRUE
 }
 
 //export primaryOpaqueRect
-func primaryOpaqueRect(rawContext *C.rdpContext, oro *C.OPAQUE_RECT_ORDER) {
+func primaryOpaqueRect(rawContext *C.rdpContext, oro *C.OPAQUE_RECT_ORDER) C.BOOL {
 	context := (*rdpContext)(unsafe.Pointer(rawContext))
 
-	hclrconv := context.clrconv
-	svcolor := oro.color
-	oro.color = C.freerdp_color_convert_var(oro.color, 16, 32, hclrconv)
+	// Note: oro is const in C, so we can't modify it directly
+	// Convert color from 16-bit to 32-bit
+	color := C.convertColor(oro.color, 16, 32)
 
 	buf := new(bytes.Buffer)
 	binary.Write(buf, binary.LittleEndian, WSOP_SC_OPAQUERECT)
-	binary.Write(buf, binary.LittleEndian, oro)
-	sendBinary(context.sendq, buf)
 
-	oro.color = svcolor
+	// Create a copy with converted color
+	type opaqueRectOrder struct {
+		nLeftRect  int32
+		nTopRect   int32
+		nWidth     int32
+		nHeight    int32
+		color      uint32
+	}
+
+	order := opaqueRectOrder{
+		nLeftRect: int32(oro.nLeftRect),
+		nTopRect:  int32(oro.nTopRect),
+		nWidth:    int32(oro.nWidth),
+		nHeight:   int32(oro.nHeight),
+		color:     uint32(color),
+	}
+
+	binary.Write(buf, binary.LittleEndian, order)
+	sendBinary(context.sendq, buf)
+	return C.TRUE
 }
 
 //export primaryMultiOpaqueRect
-func primaryMultiOpaqueRect(rawContext *C.rdpContext, moro *C.MULTI_OPAQUE_RECT_ORDER) {
+func primaryMultiOpaqueRect(rawContext *C.rdpContext, moro *C.MULTI_OPAQUE_RECT_ORDER) C.BOOL {
 	context := (*rdpContext)(unsafe.Pointer(rawContext))
 
-	hclrconv := context.clrconv
-	color := C.freerdp_color_convert_var(moro.color, 16, 32, hclrconv)
+	// Convert color from 16-bit to 32-bit using FreeRDP 3.x API
+	color := C.convertColor(moro.color, 16, 32)
 
 	buf := new(bytes.Buffer)
 	binary.Write(buf, binary.LittleEndian, WSOP_SC_MULTI_OPAQUERECT)
@@ -328,26 +380,29 @@ func primaryMultiOpaqueRect(rawContext *C.rdpContext, moro *C.MULTI_OPAQUE_RECT_
 	}
 
 	sendBinary(context.sendq, buf)
+	return C.TRUE
 }
 
 //export beginPaint
-func beginPaint(rawContext *C.rdpContext) {
+func beginPaint(rawContext *C.rdpContext) C.BOOL {
 	context := (*rdpContext)(unsafe.Pointer(rawContext))
 	buf := new(bytes.Buffer)
 	binary.Write(buf, binary.LittleEndian, WSOP_SC_BEGINPAINT)
 	sendBinary(context.sendq, buf)
+	return C.TRUE
 }
 
 //export endPaint
-func endPaint(rawContext *C.rdpContext) {
+func endPaint(rawContext *C.rdpContext) C.BOOL {
 	context := (*rdpContext)(unsafe.Pointer(rawContext))
 	buf := new(bytes.Buffer)
 	binary.Write(buf, binary.LittleEndian, WSOP_SC_ENDPAINT)
 	sendBinary(context.sendq, buf)
+	return C.TRUE
 }
 
 //export setBounds
-func setBounds(rawContext *C.rdpContext, bounds *C.rdpBounds) {
+func setBounds(rawContext *C.rdpContext, bounds *C.rdpBounds) C.BOOL {
 	context := (*rdpContext)(unsafe.Pointer(rawContext))
 	buf := new(bytes.Buffer)
 
@@ -356,10 +411,11 @@ func setBounds(rawContext *C.rdpContext, bounds *C.rdpBounds) {
 		binary.Write(buf, binary.LittleEndian, bounds)
 		sendBinary(context.sendq, buf)
 	}
+	return C.TRUE
 }
 
 //export bitmapUpdate
-func bitmapUpdate(rawContext *C.rdpContext, bitmap *C.BITMAP_UPDATE) {
+func bitmapUpdate(rawContext *C.rdpContext, bitmap *C.BITMAP_UPDATE) C.BOOL {
 	context := (*rdpContext)(unsafe.Pointer(rawContext))
 
 	var bmd *C.BITMAP_DATA
@@ -383,7 +439,8 @@ func bitmapUpdate(rawContext *C.rdpContext, bitmap *C.BITMAP_UPDATE) {
 			uint32(bmd.bitmapLength),                 // sz
 		}
 		if int(bmd.compressed) == 0 {
-			C.freerdp_image_flip(bmd.bitmapDataStream, bmd.bitmapDataStream, C.int(bmd.width), C.int(bmd.height), C.int(bmd.bitsPerPixel))
+			// Use FreeRDP 3.x helper function to flip image
+			C.flipImageData(bmd.bitmapDataStream, C.int(bmd.width), C.int(bmd.height), C.int(bmd.bitsPerPixel))
 		}
 
 		binary.Write(buf, binary.LittleEndian, meta)
@@ -397,6 +454,7 @@ func bitmapUpdate(rawContext *C.rdpContext, bitmap *C.BITMAP_UPDATE) {
 
 		sendBinary(context.sendq, buf)
 	}
+	return C.TRUE
 }
 
 //export postConnect
@@ -406,63 +464,44 @@ func postConnect(instance *C.freerdp) {
 
 //export preConnect
 func preConnect(instance *C.freerdp) C.BOOL {
-	settings := instance.settings
 	context := (*rdpContext)(unsafe.Pointer(instance.context))
+	settings := C.getSettings(instance)
 
-	settings.ServerHostname = C.CString(*context.settings.hostname)
-	settings.Username = C.CString(*context.settings.username)
-	settings.Password = C.CString(*context.settings.password)
-	settings.DesktopWidth = C.UINT32(context.settings.width)
-	settings.DesktopHeight = C.UINT32(context.settings.height)
+	// 设置连接参数 - 使用 FreeRDP 3.x settings API
+	hostname := C.CString(*context.settings.hostname)
+	username := C.CString(*context.settings.username)
+	password := C.CString(*context.settings.password)
+	defer C.free(unsafe.Pointer(hostname))
+	defer C.free(unsafe.Pointer(username))
+	defer C.free(unsafe.Pointer(password))
 
-	settings.ServerPort = C.UINT32(3389)
-	settings.IgnoreCertificate = C.BOOL(1)
+	C.freerdp_settings_set_string(settings, C.FreeRDP_ServerHostname, hostname)
+	C.freerdp_settings_set_string(settings, C.FreeRDP_Username, username)
+	C.freerdp_settings_set_string(settings, C.FreeRDP_Password, password)
+	C.freerdp_settings_set_uint32(settings, C.FreeRDP_DesktopWidth, C.UINT32(context.settings.width))
+	C.freerdp_settings_set_uint32(settings, C.FreeRDP_DesktopHeight, C.UINT32(context.settings.height))
+	C.freerdp_settings_set_uint32(settings, C.FreeRDP_ServerPort, C.UINT32(context.settings.port))
+	C.freerdp_settings_set_bool(settings, C.FreeRDP_IgnoreCertificate, C.TRUE)
+	C.freerdp_settings_set_uint32(settings, C.FreeRDP_ColorDepth, 16)
 
-	settings.PerformanceFlags = (C.PERF_DISABLE_WALLPAPER | C.PERF_DISABLE_THEMING | C.PERF_DISABLE_MENUANIMATIONS | C.PERF_DISABLE_FULLWINDOWDRAG)
+	// Performance flags
+	perfFlags := C.PERF_DISABLE_WALLPAPER | C.PERF_DISABLE_THEMING |
+		C.PERF_DISABLE_MENUANIMATIONS | C.PERF_DISABLE_FULLWINDOWDRAG
+	C.freerdp_settings_set_uint32(settings, C.FreeRDP_PerformanceFlags, C.UINT32(perfFlags))
 
-	settings.ConnectionType = C.CONNECTION_TYPE_BROADBAND_HIGH
+	// Connection type
+	C.freerdp_settings_set_uint32(settings, C.FreeRDP_ConnectionType, C.CONNECTION_TYPE_BROADBAND_HIGH)
 
-	settings.RemoteFxCodec = C.BOOL(0)
-	settings.FastPathOutput = C.BOOL(1)
-	settings.ColorDepth = C.UINT32(16)
-	settings.FrameAcknowledge = C.UINT(1)
-	settings.LargePointerFlag = C.UINT(1)
-	settings.GlyphSupportLevel = C.GLYPH_SUPPORT_FULL
-	settings.BitmapCacheV3Enabled = C.BOOL(0)
-	settings.OffscreenSupportLevel = C.UINT(0)
+	// Other settings
+	C.freerdp_settings_set_bool(settings, C.FreeRDP_RemoteFxCodec, C.FALSE)
+	C.freerdp_settings_set_bool(settings, C.FreeRDP_FastPathOutput, C.TRUE)
+	C.freerdp_settings_set_uint32(settings, C.FreeRDP_FrameAcknowledge, 1)
+	C.freerdp_settings_set_uint32(settings, C.FreeRDP_LargePointerFlag, 1)
+	C.freerdp_settings_set_uint32(settings, C.FreeRDP_GlyphSupportLevel, C.GLYPH_SUPPORT_FULL)
+	C.freerdp_settings_set_bool(settings, C.FreeRDP_BitmapCacheV3Enabled, C.FALSE)
+	C.freerdp_settings_set_uint32(settings, C.FreeRDP_OffscreenSupportLevel, 0)
 
-	//settings.order_support[C.NEG_DSTBLT_INDEX] = 0
-	//settings.order_support[C.NEG_PATBLT_INDEX] = 1
-	//settings.order_support[C.NEG_SCRBLT_INDEX] = 1
-	//settings.order_support[C.NEG_MEMBLT_INDEX] = 0
-	//settings.order_support[C.NEG_MEM3BLT_INDEX] = 0
-	//settings.order_support[C.NEG_ATEXTOUT_INDEX] = 0
-	//settings.order_support[C.NEG_AEXTTEXTOUT_INDEX] = 0
-	//settings.order_support[C.NEG_DRAWNINEGRID_INDEX] = 0
-	//settings.order_support[C.NEG_LINETO_INDEX] = 0
-	//settings.order_support[C.NEG_MULTI_DRAWNINEGRID_INDEX] = 0
-	//settings.order_support[C.NEG_OPAQUE_RECT_INDEX] = 1
-	//settings.order_support[C.NEG_SAVEBITMAP_INDEX] = 0
-	//settings.order_support[C.NEG_WTEXTOUT_INDEX] = 0
-	//settings.order_support[C.NEG_MEMBLT_V2_INDEX] = 0
-	//settings.order_support[C.NEG_MEM3BLT_V2_INDEX] = 0
-	//settings.order_support[C.NEG_MULTIDSTBLT_INDEX] = 0
-	//settings.order_support[C.NEG_MULTIPATBLT_INDEX] = 0
-	//settings.order_support[C.NEG_MULTISCRBLT_INDEX] = 0
-	//settings.order_support[C.NEG_MULTIOPAQUERECT_INDEX] = 1
-	//settings.order_support[C.NEG_FAST_INDEX_INDEX] = 0
-	//settings.order_support[C.NEG_POLYGON_SC_INDEX] = 0
-	//settings.order_support[C.NEG_POLYGON_CB_INDEX] = 0
-	//settings.order_support[C.NEG_POLYLINE_INDEX] = 0
-	//settings.order_support[C.NEG_FAST_GLYPH_INDEX] = 0
-	//settings.order_support[C.NEG_ELLIPSE_SC_INDEX] = 0
-	//settings.order_support[C.NEG_ELLIPSE_CB_INDEX] = 0
-	//settings.order_support[C.NEG_GLYPH_INDEX_INDEX] = 0
-	//settings.order_support[C.NEG_GLYPH_WEXTTEXTOUT_INDEX] = 0
-	//settings.order_support[C.NEG_GLYPH_WLONGTEXTOUT_INDEX] = 0
-	//settings.order_support[C.NEG_GLYPH_WLONGEXTTEXTOUT_INDEX] = 0
+	// Order support settings are typically handled internally by FreeRDP 3.x
 
-	context.clrconv = C.freerdp_clrconv_new(C.CLRCONV_ALPHA | C.CLRCONV_INVERT)
-
-	return 1
+	return C.TRUE
 }

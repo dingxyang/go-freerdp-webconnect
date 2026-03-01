@@ -63,12 +63,41 @@ func initSocket(ws *websocket.Conn) {
 	width, height := getResolution(ws)
 	fmt.Printf("User requested size %d x %d\n", width, height)
 
+	// Get connection parameters from WebSocket request
+	request := ws.Request()
+	host := request.FormValue("host")
+	user := request.FormValue("user")
+	pass := request.FormValue("pass")
+	portStr := request.FormValue("port")
+
+	// Use command line parameters as fallback
+	if host == "" {
+		host = *hostname
+	}
+	if user == "" {
+		user = *username
+	}
+	if pass == "" {
+		pass = *password
+	}
+
+	// Parse port, default to 3389
+	port := 3389
+	if portStr != "" {
+		if p, err := strconv.Atoi(portStr); err == nil {
+			port = p
+		}
+	}
+
+	fmt.Printf("Connecting to %s:%d as %s\n", host, port, user)
+
 	settings := &rdpConnectionSettings{
-		hostname,
-		username,
-		password,
+		&host,
+		&user,
+		&pass,
 		int(width),
 		int(height),
+		port,
 	}
 
 	go rdpconnect(sendq, recvq, settings)
@@ -90,9 +119,14 @@ func main() {
 	flag.Parse()
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
-	http.Handle("/webroot/", http.StripPrefix("/webroot/", http.FileServer(http.Dir("webroot"))))
-	http.Handle("/", websocket.Handler(initSocket))
-	fmt.Printf("http://localhost:%d/\n", 4455)
+
+	// WebSocket handler for RDP connection
+	http.Handle("/ws", websocket.Handler(initSocket))
+
+	// Static file server for webroot
+	http.Handle("/", http.FileServer(http.Dir("webroot")))
+
+	fmt.Printf("请访问: http://localhost:%d/index-debug.html\n", 4455)
 	err := http.ListenAndServe(":4455", nil)
 	if err != nil {
 		panic("ListenANdServe: " + err.Error())

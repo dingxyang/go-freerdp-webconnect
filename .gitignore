@@ -1,3 +1,31 @@
-f14n-rdp-broker
-*.hg
-*.a
+# 编译产物
+go-freerdp-webconnect
+build/
+install/
+
+# Go 相关
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.sum
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 临时文件
+*.log
+*.tmp
+.claude/settings.json
+src/FreeRDP
+FINAL_STATUS.md
+COMPILE_STATUS.md
+API_MIGRATION_PROGRESS.md
+BUILD.md
