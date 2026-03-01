@@ -374,8 +374,8 @@ type rdpConnectionSettings struct {
 // 完全在 Go 内存中分配，由 GC 管理
 // 不在 C 分配的内存中存储 Go 指针（CGo 规范要求）
 type rdpContextData struct {
-	sendq    chan []byte             // 向 WebSocket 客户端发送数据的队列
-	recvq    chan []byte             // 接收断开信号的队列
+	sendq    chan []byte            // 向 WebSocket 客户端发送数据的队列
+	recvq    chan []byte            // 接收断开信号的队列
 	settings *rdpConnectionSettings // RDP 连接参数
 }
 
@@ -499,8 +499,9 @@ func sendBinary(sendq chan []byte, data *bytes.Buffer) {
 	sendq <- data.Bytes()
 }
 
-//export primaryPatBlt
 // primaryPatBlt 处理 PatBlt 图案填充命令：仅处理纯色填充（GDI_BS_SOLID），转换颜色后发送给客户端
+//
+//export primaryPatBlt
 func primaryPatBlt(rawContext *C.rdpContext, patblt *C.PATBLT_ORDER) C.BOOL {
 	d := lookupCtx(rawContext)
 	if d == nil {
@@ -527,8 +528,9 @@ func primaryPatBlt(rawContext *C.rdpContext, patblt *C.PATBLT_ORDER) C.BOOL {
 	return C.TRUE
 }
 
-//export primaryScrBlt
 // primaryScrBlt 处理屏幕区域复制命令（ScrBlt），将源区域复制到目标区域
+//
+//export primaryScrBlt
 func primaryScrBlt(rawContext *C.rdpContext, scrblt *C.SCRBLT_ORDER) C.BOOL {
 	d := lookupCtx(rawContext)
 	if d == nil {
@@ -552,8 +554,9 @@ func primaryScrBlt(rawContext *C.rdpContext, scrblt *C.SCRBLT_ORDER) C.BOOL {
 	return C.TRUE
 }
 
-//export primaryOpaqueRect
 // primaryOpaqueRect 处理单个不透明矩形填充命令，转换颜色后发送给客户端
+//
+//export primaryOpaqueRect
 func primaryOpaqueRect(rawContext *C.rdpContext, oro *C.OPAQUE_RECT_ORDER) C.BOOL {
 	d := lookupCtx(rawContext)
 	if d == nil {
@@ -586,8 +589,9 @@ func primaryOpaqueRect(rawContext *C.rdpContext, oro *C.OPAQUE_RECT_ORDER) C.BOO
 	return C.TRUE
 }
 
-//export primaryMultiOpaqueRect
 // primaryMultiOpaqueRect 处理多矩形填充命令，将所有矩形区域一次性发送给客户端
+//
+//export primaryMultiOpaqueRect
 func primaryMultiOpaqueRect(rawContext *C.rdpContext, moro *C.MULTI_OPAQUE_RECT_ORDER) C.BOOL {
 	d := lookupCtx(rawContext)
 	if d == nil {
@@ -611,8 +615,9 @@ func primaryMultiOpaqueRect(rawContext *C.rdpContext, moro *C.MULTI_OPAQUE_RECT_
 	return C.TRUE
 }
 
-//export beginPaint
 // beginPaint 处理帧绘制开始事件，向客户端发送 BEGINPAINT 信号，通知前端准备接收本帧更新
+//
+//export beginPaint
 func beginPaint(rawContext *C.rdpContext) C.BOOL {
 	d := lookupCtx(rawContext)
 	if d == nil {
@@ -624,8 +629,9 @@ func beginPaint(rawContext *C.rdpContext) C.BOOL {
 	return C.TRUE
 }
 
-//export endPaint
 // endPaint 处理帧绘制结束事件，向客户端发送 ENDPAINT 信号，通知前端本帧所有更新已发送完毕
+//
+//export endPaint
 func endPaint(rawContext *C.rdpContext) C.BOOL {
 	d := lookupCtx(rawContext)
 	if d == nil {
@@ -637,9 +643,10 @@ func endPaint(rawContext *C.rdpContext) C.BOOL {
 	return C.TRUE
 }
 
-//export setBounds
 // setBounds 处理绘制裁剪边界设置命令，向客户端发送 SETBOUNDS 消息限定本帧的有效绘制区域
 // bounds 为 nil 时忽略（服务器取消裁剪区域时会发送 nil）
+//
+//export setBounds
 func setBounds(rawContext *C.rdpContext, bounds *C.rdpBounds) C.BOOL {
 	d := lookupCtx(rawContext)
 	if d == nil {
@@ -654,9 +661,10 @@ func setBounds(rawContext *C.rdpContext, bounds *C.rdpBounds) C.BOOL {
 	return C.TRUE
 }
 
-//export bitmapUpdate
 // bitmapUpdate 处理位图更新命令，将服务器发来的一批位图矩形逐一编码后发送给 WebSocket 客户端
 // 对未压缩位图需先做垂直翻转（RDP 位图为自底向上存储，浏览器 Canvas 需自顶向下）
+//
+//export bitmapUpdate
 func bitmapUpdate(rawContext *C.rdpContext, bitmap *C.BITMAP_UPDATE) C.BOOL {
 	d := lookupCtx(rawContext)
 	if d == nil {
@@ -695,15 +703,17 @@ func bitmapUpdate(rawContext *C.rdpContext, bitmap *C.BITMAP_UPDATE) C.BOOL {
 	return C.TRUE
 }
 
-//export postConnect
 // postConnect 在 RDP 连接成功建立后由 C 层回调，用于记录连接成功日志
+//
+//export postConnect
 func postConnect(_ *C.freerdp) {
 	fmt.Println("Connected.")
 }
 
-//export preConnect
 // preConnect 在建立 RDP 连接前由 C 层回调，负责将 Go 侧的连接参数写入 FreeRDP 配置，
 // 包括主机名、用户名、密码、分辨率、端口、安全协议、性能优化参数及动态分辨率支持等
+//
+//export preConnect
 func preConnect(instance *C.freerdp) C.BOOL {
 	d := lookupCtx(instance.context)
 	if d == nil {
@@ -718,6 +728,7 @@ func preConnect(instance *C.freerdp) C.BOOL {
 	defer C.free(unsafe.Pointer(username))
 	defer C.free(unsafe.Pointer(password))
 
+	// 通过AI来问：在freerdp里，FreeRDP_UseRdpSecurityLayer是什么意思，有什么作用，可以填哪些值。
 	C.freerdp_settings_set_string(settings, C.FreeRDP_ServerHostname, hostname)
 	C.freerdp_settings_set_string(settings, C.FreeRDP_Username, username)
 	C.freerdp_settings_set_string(settings, C.FreeRDP_Password, password)
@@ -728,29 +739,35 @@ func preConnect(instance *C.freerdp) C.BOOL {
 	C.freerdp_settings_set_uint32(settings, C.FreeRDP_ColorDepth, 16)
 
 	// 安全协议设置：禁用 NLA 和 TLS，改用经典 RDP 安全层（兼容旧版 Windows 及不支持 NLA 的环境）
-	C.freerdp_settings_set_bool(settings, C.FreeRDP_NlaSecurity, C.FALSE)
-	C.freerdp_settings_set_bool(settings, C.FreeRDP_TlsSecurity, C.FALSE)
-	C.freerdp_settings_set_bool(settings, C.FreeRDP_RdpSecurity, C.TRUE)
-	C.freerdp_settings_set_bool(settings, C.FreeRDP_UseRdpSecurityLayer, C.TRUE)
+	C.freerdp_settings_set_bool(settings, C.FreeRDP_NlaSecurity, C.FALSE)        // 是与网络安全层认证（Network Level Authentication，NLA）相关的配置选项，用于控制客户端与远程桌面服务（如Windows RDP）之间的安全认证方式。
+	C.freerdp_settings_set_bool(settings, C.FreeRDP_TlsSecurity, C.FALSE)        // 一个配置选项，用于控制客户端与远程服务器之间通过 TLS（Transport Layer Security） 建立安全连接时的行为模式。 0 禁用TLS加密（不安全，不推荐）。
+	C.freerdp_settings_set_bool(settings, C.FreeRDP_RdpSecurity, C.TRUE)         //用于配置RDP连接的安全协议和加密方式。它决定了客户端与服务器之间通信的安全级别和兼容性。
+	C.freerdp_settings_set_bool(settings, C.FreeRDP_UseRdpSecurityLayer, C.TRUE) //一个配置选项，用于控制RDP连接时使用的安全协议层（Security Layer）的行为,1 强制使用 RDP标准加密（不尝试TLS/SSL），仅用于旧版服务器兼容性。0 禁用RDP标准加密，强制要求TLS/SSL（若服务器不支持，连接会失败）。
 
-	// 性能优化标志：禁用壁纸、主题、菜单动画和完整窗口拖拽，减少带宽占用
-	perfFlags := C.PERF_DISABLE_WALLPAPER | C.PERF_DISABLE_THEMING |
-		C.PERF_DISABLE_MENUANIMATIONS | C.PERF_DISABLE_FULLWINDOWDRAG
+	// 性能优化标志：禁用壁纸、主题、菜单动画，保留完整窗口拖拽
+	perfFlags := C.PERF_DISABLE_WALLPAPER /*桌面上的壁纸未显示*/ |
+		C.PERF_DISABLE_THEMING /*主题处于禁用状态*/ |
+		C.PERF_DISABLE_MENUANIMATIONS /*菜单动画已禁用*/ |
+		0x00000010 /*TS_PERF_ENABLE_ENHANCED - 启用增强型图形*/ |
+		0x00000020 /*TS_PERF_DISABLE_CURSOR_SHADOW - 光标不显示阴影*/ |
+		0x00000040 /*TS_PERF_DISABLE_CURSORSETTINGS - 禁用光标闪烁*/ |
+		0x00000080 /*TS_PERF_ENABLE_FONT_SMOOTHING - 启用字体平滑*/ |
+		0x00000100 /*TS_PERF_ENABLE_DESKTOP_COMPOSITION - 启用桌面组合*/
 	C.freerdp_settings_set_uint32(settings, C.FreeRDP_PerformanceFlags, C.UINT32(perfFlags))
 
-	C.freerdp_settings_set_uint32(settings, C.FreeRDP_ConnectionType, C.CONNECTION_TYPE_BROADBAND_HIGH)
-	C.freerdp_settings_set_bool(settings, C.FreeRDP_RemoteFxCodec, C.FALSE)
-	C.freerdp_settings_set_bool(settings, C.FreeRDP_FastPathOutput, C.TRUE)
-	C.freerdp_settings_set_uint32(settings, C.FreeRDP_FrameAcknowledge, 1)
-	C.freerdp_settings_set_uint32(settings, C.FreeRDP_LargePointerFlag, 1)
-	C.freerdp_settings_set_uint32(settings, C.FreeRDP_GlyphSupportLevel, C.GLYPH_SUPPORT_FULL)
-	C.freerdp_settings_set_bool(settings, C.FreeRDP_BitmapCacheV3Enabled, C.FALSE)
-	C.freerdp_settings_set_uint32(settings, C.FreeRDP_OffscreenSupportLevel, 0)
+	C.freerdp_settings_set_uint32(settings, C.FreeRDP_ConnectionType, 0x06)                    /*CONNECTION_TYPE_LAN (0x6) 局域网 (LAN) (10 Mbps 或更高)*/
+	C.freerdp_settings_set_bool(settings, C.FreeRDP_RemoteFxCodec, C.TRUE)                     //指 RemoteFX 编解码器 的实现模块，主要用于处理微软 RemoteFX 技术中的视频和图像压缩/解压缩功能。以下是其详细作用和工作原理：
+	C.freerdp_settings_set_bool(settings, C.FreeRDP_FastPathOutput, C.TRUE)                    //Fast-Path 是 RDP（远程桌面协议）的一种优化传输模式，与传统 Slow-Path（基于标准 T.124 协议）相比，它通过减少协议头开销和简化数据封装，显著提升数据传输效率。Fast-Path 常用于图形更新、输入事件等高频率操作。
+	C.freerdp_settings_set_uint32(settings, C.FreeRDP_FrameAcknowledge, 2)                     //一个与远程桌面协议（RDP）图形渲染和帧确认机制相关的功能
+	C.freerdp_settings_set_uint32(settings, C.FreeRDP_LargePointerFlag, 0x00000001|0x00000002) //用于控制远程桌面会话中鼠标指针的显示和处理方式
+	C.freerdp_settings_set_uint32(settings, C.FreeRDP_GlyphSupportLevel, 0x00000000)           //GLYPH_SUPPORT_NONE 禁用字形缓存，所有文本直接作为位图传输。兼容性最强，但性能最低（带宽占用高）。
+	C.freerdp_settings_set_bool(settings, C.FreeRDP_BitmapCacheV3Enabled, C.TRUE)              //一个配置选项，用于控制是否启用 Bitmap Cache Version 3（位图缓存V3） 功能，1：启用 Bitmap Cache V3（默认推荐，除非遇到兼容性问题）,0：禁用 Bitmap Cache V3，使用更旧的缓存机制。
+	C.freerdp_settings_set_uint32(settings, C.FreeRDP_OffscreenSupportLevel, 0)                //0 - 完全禁用离屏表面支持。离屏表面是RDP协议中的一种特性，允许服务器将部分图形内容缓存到客户端的离屏缓冲区中，以便后续快速重用（如窗口拖动、动画渲染等）。
 
 	// 启用 RDPEDISP 虚拟通道支持动态桌面分辨率调整
 	// FreeRDP_SupportDisplayControl=5185，FreeRDP_DynamicResolutionUpdate=1558
-	C.freerdp_settings_set_bool(settings, 5185, C.TRUE)
-	C.freerdp_settings_set_bool(settings, 1558, C.TRUE)
+	C.freerdp_settings_set_bool(settings, 5185, C.TRUE) //一个与动态显示分辨率调整相关的配置选项，主要用于控制客户端是否支持在远程会话过程中动态更改显示设置（如分辨率、方向等）
+	C.freerdp_settings_set_bool(settings, 1558, C.TRUE) //一个与动态分辨率更新相关的配置选项，主要用于远程桌面会话期间根据客户端窗口大小变化自动调整服务器端的分辨率
 
 	// 禁用 rdpdr 通道及其所有触发条件，避免因插件库不存在而产生 ERROR 日志。
 	// freerdp_client_load_addins 中以下任一条件为 TRUE 时会强制开启 DeviceRedirection：
@@ -758,11 +775,11 @@ func preConnect(instance *C.freerdp) C.BOOL {
 	//   AudioPlayback (rdpsnd 依赖 rdpdr)
 	// 因此需要全部禁用。
 	C.freerdp_settings_set_bool(settings, 4160, C.FALSE) // FreeRDP_DeviceRedirection
-	C.freerdp_settings_set_bool(settings, 137, C.FALSE)  // FreeRDP_NetworkAutoDetect
-	C.freerdp_settings_set_bool(settings, 144, C.FALSE)  // FreeRDP_SupportHeartbeatPdu
-	C.freerdp_settings_set_bool(settings, 513, C.FALSE)  // FreeRDP_SupportMultitransport
-	C.freerdp_settings_set_bool(settings, 714, C.FALSE)  // FreeRDP_AudioPlayback
-	C.freerdp_settings_set_bool(settings, 715, C.FALSE)  // FreeRDP_AudioCapture
+	C.freerdp_settings_set_bool(settings, 137, C.FALSE)  // FreeRDP_NetworkAutoDetect 一个与网络自动检测（Network Auto-Detect）功能相关的配置选项
+	C.freerdp_settings_set_bool(settings, 144, C.TRUE)   // FreeRDP_SupportHeartbeatPdu 一个配置选项，用于控制客户端与远程桌面服务器（如Windows远程桌面服务）之间的心跳机制, 0 禁用心跳机制（默认值），依赖底层TCP保活机制或应用层超时设置。
+	C.freerdp_settings_set_bool(settings, 513, C.TRUE)   // FreeRDP_SupportMultitransport 一个配置选项，用于控制是否启用 RDP 多传输协议（Multitransport） 功能, 1 启用多传输支持（默认推荐，如果服务端支持）, 0 禁用多传输，仅使用传统 TCP 传输。
+	C.freerdp_settings_set_bool(settings, 714, C.FALSE)  // FreeRDP_AudioPlayback 一个配置选项，用于控制客户端在远程桌面会话中的音频重定向（播放）行为
+	C.freerdp_settings_set_bool(settings, 715, C.FALSE)  // FreeRDP_AudioCapture 一个配置选项，用于控制客户端是否启用音频捕获（即从客户端麦克风捕获音频并传输到远程服务器）
 
 	return C.TRUE
 }
