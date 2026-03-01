@@ -328,6 +328,11 @@ table td.key {
     font-size: 14pt;
 }
 
+#rdphost, #rdpuser, #rdppass, #dtsize {
+    width: 160px;
+    box-sizing: border-box;
+}
+
 .error {
     color: #FFF;
     background-color: #F00;
