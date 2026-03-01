@@ -31,7 +31,7 @@ audio:not([controls]) { display: none; }
 
 html { font-size: 100%; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
 
-html, button, input, select, textarea { font-family: sans-serif; color: #222; }
+html, button, input, select, textarea { font-family: sans-serif; color: #1A1A2E; }
 
 body { margin: 0; font-size: 1em; line-height: 1.4; }
 
@@ -213,8 +213,8 @@ td { vertical-align: top; }
 .chromeframe { margin: 0.2em 0; background: #ccc; color: black; padding: 0.2em 0; }
 
 
-/* ==|== primary styles =====================================================
-   Author:
+/* ==|== primary styles — HarmonyOS 风格 =====================================
+   调色盘：深空蓝背景 · 华为红 #CF0A2C · 白色卡片 · 圆角现代控件
    ========================================================================== */
 
 html {
@@ -222,139 +222,308 @@ html {
     height: 100%;
     overflow: hidden;
 }
+
 body {
-    font-family: Verdana,Arial,Helvetica,sans-serif;
-    font-size: 10pt;
+    font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'HarmonyOS Sans',
+                 Verdana, Arial, sans-serif;
+    font-size: 13px;
     width: 100%;
     height: 100%;
     overflow: hidden;
-    margin:0;
+    margin: 0;
+    /* 深空蓝渐变背景 */
+    background: linear-gradient(145deg, #060C24 0%, #0E1535 55%, #091225 100%);
 }
+
+/* ── 表单基础控件 ─────────────────────────────────────── */
+
 fieldset {
-    border: 1px solid #CCCCCC;
-    margin: 0 10px 10px;
-    padding: 5px;
-    text-align: left;
+    border: none;
+    margin: 0;
+    padding: 0;
 }
-input:focus, select:focus, textarea:focus {
-    background-color: #FFFFDD;
-}
-input, select {
-    border: 1px solid silver;
-    font-size: 10pt;
-}
+
 legend {
-    color: #0B55C4;
-    font-size: 12pt;
-    font-weight: bold;
+    display: none;
 }
+
+input[type="text"],
+input[type="password"] {
+    background: #F7F8FA;
+    border: 1.5px solid #E5E7EB;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 13px;
+    color: #1A1A2E;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+input[type="text"]:hover,
+input[type="password"]:hover {
+    border-color: #C5CBD6;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+    outline: none;
+    border-color: #CF0A2C !important;
+    box-shadow: 0 0 0 3px rgba(207, 10, 44, 0.12);
+    background: #FFFFFF !important;
+}
+
+select {
+    background: #F7F8FA;
+    border: 1.5px solid #E5E7EB;
+    border-radius: 8px;
+    padding: 7px 10px;
+    font-size: 13px;
+    color: #1A1A2E;
+    cursor: pointer;
+    transition: border-color 0.2s;
+}
+
+select:hover {
+    border-color: #C5CBD6;
+}
+
+input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    cursor: pointer;
+    accent-color: #CF0A2C;
+}
+
+/* ── 表格布局 ─────────────────────────────────────────── */
+
 table td {
     vertical-align: middle;
-    padding: 5px;
+    padding: 6px 8px;
 }
+
 table td.buttons {
-    margin-top: 20px;
+    padding-top: 18px;
     text-align: right;
 }
+
 table td.key {
-    background-color: #F6F6F6;
-    border-bottom: 1px solid #E9E9E9;
-    border-right: 1px solid #E9E9E9;
-    color: #666666;
-    font-weight: bold;
+    background: transparent;
+    border: none;
+    color: #6B7280;
+    font-weight: 500;
+    font-size: 13px;
     text-align: right;
     white-space: nowrap;
-    width: 260px;
+    padding-right: 12px;
+    width: auto;
 }
 
-.dialog {
-    background-color: white;
-}
-.tab-wrapper
-{
-	padding:				5px 5px;
-	margin:					0;
-	border:					1px solid #eee;
-	clear:					both;
-}
-.tab-menu
-{
-	margin:					0;
-	padding:				0;
-	list-style:				none;
-	/* overflow:				auto; */
-}
-.tab-menu li
-{
-	margin:					0;
-	padding:				0;
-	float:					left;
-	line-height:			1.5em;
-}
-.tab-menu li a
-{
-    background-color: #DDD;
-	text-decoration:		none;
-	padding:				5px;
-	font-weight:			bold;
-	color:					black;
-	border:					2px solid #fff;
-}
-.tab-menu li a:hover,
-.tab-menu li a:focus
-{
-	border:					2px solid #fff;
-	color:					black;
-	/* your effect here */
-}
-.tab-menu li.tab-selected a
-{
-    background-color: #FFF;
-	text-decoration:		none;
-	color:					black;
-	/* your effect here */
-	border:					2px solid #eee;
-}
-.tab-menu li.tab-selected a:hover
-.tab-menu li.tab-selected a:focus
-{
-	border:					2px solid #eee;
-}
-
-.about {
-	border:					1px solid #000;
-    margin: 10px;
-    text-align: center;
-    font-size: 14pt;
-}
+/* ── 输入框统一宽度 ───────────────────────────────────── */
 
 #rdphost, #rdpuser, #rdppass, #dtsize {
     width: 160px;
     box-sizing: border-box;
 }
 
-.error {
-    color: #FFF;
-    background-color: #F00;
-    font-size: 14pt;
-	font-weight:			bold;
+/* ── 连接按钮 ─────────────────────────────────────────── */
+
+#rdpconnect {
+    background: linear-gradient(135deg, #CF0A2C 0%, #E8102E 100%);
+    color: #FFFFFF;
+    border: none;
+    border-radius: 8px;
+    padding: 9px 32px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    letter-spacing: 0.5px;
+    transition: opacity 0.2s, transform 0.1s;
+    box-shadow: 0 4px 14px rgba(207, 10, 44, 0.40);
 }
 
-label.big {
-    font-size: 14pt;
-	font-weight: bold;
+#rdpconnect:hover {
+    opacity: 0.88;
+    transform: translateY(-1px);
+}
+
+#rdpconnect:active {
+    transform: translateY(0);
+    opacity: 1;
+}
+
+/* ── 对话框标题栏 ─────────────────────────────────────── */
+
+.dialog-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 20px 14px;
+    border-bottom: 1px solid #F0F1F3;
+    background: linear-gradient(90deg, #FFF5F6 0%, #FFFFFF 100%);
+}
+
+.dialog-logo {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+}
+
+.dialog-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #0E1535;
+    letter-spacing: 0.3px;
+}
+
+/* ── 对话框卡片 ───────────────────────────────────────── */
+
+.dialog {
+    background: #FFFFFF;
+}
+
+#maindialog {
+    border-collapse: separate !important;
+    border-spacing: 0;
+    border-radius: 16px !important;
+    overflow: hidden;
+    box-shadow: 0 28px 72px rgba(0, 0, 0, 0.65),
+                0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+#maindialog > tbody > tr > td {
+    padding: 0;
+}
+
+/* 卡片顶部华为红色条 */
+#rdpdialog::before {
+    content: '';
+    display: block;
+    height: 4px;
+    background: linear-gradient(90deg, #CF0A2C 0%, #FF3D5A 100%);
+}
+
+/* ── Tab 导航 ─────────────────────────────────────────── */
+
+.tab-menu {
+    margin: 0;
+    padding: 0 16px;
+    list-style: none;
+    display: flex;
+    border-bottom: 1px solid #F0F1F3;
+    background: #FAFBFC;
+    overflow: auto;
+}
+
+.tab-menu li {
+    margin: 0;
+    padding: 0;
+    float: none;
+    line-height: 1;
+}
+
+.tab-menu li a {
+    display: block;
+    background: transparent;
+    text-decoration: none;
+    padding: 11px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #9CA3AF;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    white-space: nowrap;
+    transition: color 0.2s, border-color 0.2s;
+}
+
+.tab-menu li a:hover,
+.tab-menu li a:focus {
+    color: #CF0A2C;
+    border: none;
+    border-bottom: 2px solid rgba(207, 10, 44, 0.30);
+    margin-bottom: -1px;
+    outline: none;
+}
+
+.tab-menu li.tab-selected a,
+.tab-menu li.tab-selected a:hover,
+.tab-menu li.tab-selected a:focus {
+    background: transparent;
+    color: #CF0A2C;
+    border: none;
+    border-bottom: 2px solid #CF0A2C;
+    margin-bottom: -1px;
+    font-weight: 600;
+}
+
+.tab-wrapper {
+    padding: 16px 20px;
+    margin: 0;
+    border: none;
+    clear: both;
+}
+
+/* ── 关于面板 ─────────────────────────────────────────── */
+
+.about {
+    padding: 28px 24px;
+    text-align: center;
+    background: #FAFBFC;
+    border: none;
+    margin: 0;
+    font-size: 13px;
+}
+
+.about h2 {
+    font-size: 20px;
+    font-weight: 700;
+    color: #0E1535;
+    margin: 0 0 14px;
+    letter-spacing: 0.3px;
+}
+
+.about span {
+    color: #6B7280;
+}
+
+/* ── 鼠标助手浮窗 ─────────────────────────────────────── */
+
+#mousehelper {
+    border-collapse: separate !important;
+    border-spacing: 0;
+    border-radius: 14px !important;
+    overflow: hidden;
+    box-shadow: 0 10px 36px rgba(0, 0, 0, 0.45);
 }
 
 #mousedialog {
-    margin: 10px !important;
-    padding: 10px !important;
+    margin: 10px;
+    padding: 6px;
 }
+
+/* ── 画布 ─────────────────────────────────────────────── */
 
 #screen {
     border: 0;
     margin: 0;
     padding: 0;
     background: black;
+}
+
+/* ── 错误提示 ─────────────────────────────────────────── */
+
+.error {
+    color: #FFF;
+    background-color: #CF0A2C;
+    font-size: 14pt;
+    font-weight: bold;
+    border-radius: 4px;
+    padding: 4px 8px;
+}
+
+label.big {
+    font-size: 14pt;
+    font-weight: bold;
 }
 
 /* ==|== media queries ======================================================

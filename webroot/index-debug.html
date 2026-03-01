@@ -3,7 +3,7 @@
     <head>
         <meta charset="utf-8" />
         <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
-        <title>FreeRDP WebConnect：离线</title>
+        <title>Go FreeRDP：离线</title>
         <meta name="robots" content="nofollow" />
         <meta name="description" content="基于 HTML5 的 RDP 客户端">
         <meta name="viewport" content="width=device-width height=device-height user-scalable=no">
@@ -51,12 +51,12 @@
                         alert(msg);
                         });
                 rdp.addEvent('connected', function() {
-                        document.title = "FreeRDP WebConnect：已连接";
+                        document.title = "Go FreeRDP：已连接";
                         window.removeEvent('resize', OnDesktopSize);
                         window.addEvent('resize', onConnectedResize);
                         });
                 rdp.addEvent('disconnected', function() {
-                        document.title = "FreeRDP WebConnect：已断开";
+                        document.title = "Go FreeRDP：已断开";
                         window.removeEvent('resize', onConnectedResize);
                         OnDesktopSize();
                         window.addEvent('resize', OnDesktopSize);
@@ -259,6 +259,15 @@
             <tr>
                 <td>
                     <div id="rdpdialog" class="dialog">
+                        <div class="dialog-header">
+                            <svg class="dialog-logo" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <rect x="1" y="1" width="26" height="26" rx="7" stroke="#CF0A2C" stroke-width="2"/>
+                                <rect x="6" y="9" width="5" height="10" rx="1.5" fill="#CF0A2C"/>
+                                <rect x="17" y="9" width="5" height="10" rx="1.5" fill="#CF0A2C"/>
+                                <rect x="11" y="13" width="6" height="2" rx="1" fill="#CF0A2C"/>
+                            </svg>
+                            <span class="dialog-title">远程桌面连接</span>
+                        </div>
                         <h4 title="主要连接设置">常规</h4>
                         <div>
                             <form>
