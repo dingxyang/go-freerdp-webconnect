@@ -50,8 +50,6 @@ echo "  - libxrandr-dev"
 echo "  - libgstreamer1.0-dev"
 echo "  - libgstreamer-plugins-base1.0-dev"
 echo "  - libxi-dev"
-echo "  - libavutil-dev"
-echo "  - libavcodec-dev"
 echo "  - libxtst-dev"
 echo "  - libgtk-3-dev"
 echo "  - libgcrypt20-dev"
@@ -61,6 +59,7 @@ echo "  - libudev-dev"
 echo "  - libdbus-glib-1-dev"
 echo "  - uuid-dev"
 echo "  - libxkbcommon-dev"
+echo "  - libopus-dev"
 
 # 检查是否有 --auto-install 参数
 AUTO_INSTALL=false
@@ -76,10 +75,10 @@ if [ "$AUTO_INSTALL" = true ]; then
         libxcursor-dev libxdamage-dev libxv-dev libxkbfile-dev \
         libasound2-dev libcups2-dev libxml2-dev libxrandr-dev \
         libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-        libxi-dev libavutil-dev libavcodec-dev libxtst-dev \
+        libxi-dev libxtst-dev \
         libgtk-3-dev libgcrypt20-dev libpulse-dev \
         libusb-1.0-0-dev libudev-dev libdbus-glib-1-dev \
-        uuid-dev libxkbcommon-dev
+        uuid-dev libxkbcommon-dev libopus-dev
 else
     read -p "是否自动安装这些依赖? (y/n) " -n 1 -r
     echo
@@ -90,10 +89,10 @@ else
             libxcursor-dev libxdamage-dev libxv-dev libxkbfile-dev \
             libasound2-dev libcups2-dev libxml2-dev libxrandr-dev \
             libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-            libxi-dev libavutil-dev libavcodec-dev libxtst-dev \
+            libxi-dev libxtst-dev \
             libgtk-3-dev libgcrypt20-dev libpulse-dev \
             libusb-1.0-0-dev libudev-dev libdbus-glib-1-dev \
-            uuid-dev libxkbcommon-dev
+            uuid-dev libxkbcommon-dev libopus-dev
     fi
 fi
 
@@ -111,6 +110,8 @@ cmake "${FREERDP_SRC}" \
     -DWITH_WAYLAND=OFF \
     -DWITH_PULSE=OFF \
     -DWITH_FFMPEG=OFF \
+    -DWITH_SWSCALE=OFF \
+    -DWITH_DSP_FFMPEG=OFF \
     -DWITH_GSTREAMER_1_0=OFF \
     -DWITH_CLIENT=OFF \
     -DWITH_SERVER=OFF \
