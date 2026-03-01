@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"net/http"
@@ -74,15 +75,29 @@ func initSocket(ws *websocket.Conn) {
 		port,
 	}
 
-	go rdpconnect(sendq, recvq, settings)
+	inputq := make(chan inputEvent, 50)
+	go rdpconnect(sendq, recvq, inputq, settings)
 	go processSendQ(ws, sendq)
 
 	read := make([]byte, 1024)
 	for {
-		_, err := ws.Read(read)
+		n, err := ws.Read(read)
 		if err != nil {
 			recvq <- []byte("1")
 			return
+		}
+		if n >= 12 {
+			op := binary.LittleEndian.Uint32(read[0:4])
+			a := binary.LittleEndian.Uint32(read[4:8])
+			b := binary.LittleEndian.Uint32(read[8:12])
+			var c uint32
+			if n >= 16 {
+				c = binary.LittleEndian.Uint32(read[12:16])
+			}
+			select {
+			case inputq <- inputEvent{op, a, b, c}:
+			default:
+			}
 		}
 	}
 }

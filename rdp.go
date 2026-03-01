@@ -7,10 +7,44 @@ package main
 #include <freerdp/codec/color.h>
 #include <freerdp/gdi/gdi.h>
 #include <freerdp/settings.h>
+#include <freerdp/input.h>
 #include <winpr/synch.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+
+// Map JavaScript keyCode (modifier keys only) to RDP scancode.
+// modkeys in JS: [8, 16, 17, 18, 20, 144, 145]
+static UINT32 jsKeyCodeToScancode(UINT32 keycode) {
+    switch (keycode) {
+        case 8:   return 0x0E;  // Backspace
+        case 16:  return 0x2A;  // Left Shift
+        case 17:  return 0x1D;  // Left Ctrl
+        case 18:  return 0x38;  // Left Alt
+        case 20:  return 0x3A;  // CapsLock
+        case 144: return 0x45;  // NumLock
+        case 145: return 0x46;  // ScrollLock
+        default:  return 0;
+    }
+}
+
+static void sendMouseInput(freerdp* instance, UINT32 flags, UINT32 x, UINT32 y) {
+    freerdp_input_send_mouse_event(instance->context->input, (UINT16)flags, (UINT16)x, (UINT16)y);
+}
+
+static void sendKupdownInput(freerdp* instance, UINT32 down, UINT32 keycode) {
+    UINT32 scancode = jsKeyCodeToScancode(keycode);
+    if (scancode == 0) return;
+    freerdp_input_send_keyboard_event_ex(instance->context->input,
+        down ? TRUE : FALSE, FALSE, scancode);
+}
+
+static void sendKpressInput(freerdp* instance, UINT32 charcode) {
+    freerdp_input_send_unicode_keyboard_event(instance->context->input,
+        0, (UINT16)charcode);
+    freerdp_input_send_unicode_keyboard_event(instance->context->input,
+        KBD_FLAGS_RELEASE, (UINT16)charcode);
+}
 
 // Helper function to convert color using FreeRDP 3.x API
 static inline UINT32 convertColor(UINT32 color, UINT32 srcBpp, UINT32 dstBpp) {
@@ -230,6 +264,17 @@ type primaryScrBltMeta struct {
 	sy  int32
 }
 
+// inputEvent carries one client input message from the WebSocket reader to rdpconnect.
+// op=0 mouse: a=flags b=x c=y
+// op=1 kupdown: a=down(1)/up(0) b=keycode
+// op=2 kpress: a=modifiers(unused) b=charcode
+type inputEvent struct {
+	op uint32
+	a  uint32
+	b  uint32
+	c  uint32
+}
+
 type rdpConnectionSettings struct {
 	hostname *string
 	username *string
@@ -275,7 +320,7 @@ func lookupCtx(ctx *C.rdpContext) *rdpContextData {
 	return d
 }
 
-func rdpconnect(sendq chan []byte, recvq chan []byte, settings *rdpConnectionSettings) {
+func rdpconnect(sendq chan []byte, recvq chan []byte, inputq chan inputEvent, settings *rdpConnectionSettings) {
 	// Lock the OS thread: FreeRDP's transport/TLS uses thread-local state,
 	// so all FreeRDP calls must happen on the same OS thread.
 	runtime.LockOSThread()
@@ -309,6 +354,15 @@ func rdpconnect(sendq chan []byte, recvq chan []byte, settings *rdpConnectionSet
 		case <-recvq:
 			fmt.Println("Disconnecting (websocket error)")
 			mainEventLoop = false
+		case ev := <-inputq:
+			switch ev.op {
+			case 0: // mouse
+				C.sendMouseInput(instance, C.UINT32(ev.a), C.UINT32(ev.b), C.UINT32(ev.c))
+			case 1: // key up/down (modifier keys only)
+				C.sendKupdownInput(instance, C.UINT32(ev.a), C.UINT32(ev.b))
+			case 2: // key press (unicode)
+				C.sendKpressInput(instance, C.UINT32(ev.b))
+			}
 		default:
 			e := int(C.freerdp_error_info(instance))
 			if e != 0 {
