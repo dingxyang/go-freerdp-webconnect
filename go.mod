@@ -1,4 +1,4 @@
-module go-freerdp-webconnect
+module gofreerdp
 
 go 1.25
 

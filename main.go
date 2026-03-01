@@ -3,18 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
-	"golang.org/x/net/websocket"
-	"log"
 	"net/http"
 	"runtime"
 	"strconv"
 	"strings"
-)
 
-var (
-	hostname = flag.String("h", "", "The RDP server we will connect to")
-	username = flag.String("u", "", "Username for the RDP server")
-	password = flag.String("p", "", "Password for the RDP server")
+	"golang.org/x/net/websocket"
 )
 
 func getResolution(ws *websocket.Conn) (width int64, height int64) {
@@ -64,30 +58,10 @@ func initSocket(ws *websocket.Conn) {
 	fmt.Printf("User requested size %d x %d\n", width, height)
 
 	// Get connection parameters from WebSocket request
-	request := ws.Request()
-	host := request.FormValue("host")
-	user := request.FormValue("user")
-	pass := request.FormValue("pass")
-	portStr := request.FormValue("port")
-
-	// Use command line parameters as fallback
-	if host == "" {
-		host = *hostname
-	}
-	if user == "" {
-		user = *username
-	}
-	if pass == "" {
-		pass = *password
-	}
-
-	// Parse port, default to 3389
-	port := 3389
-	if portStr != "" {
-		if p, err := strconv.Atoi(portStr); err == nil {
-			port = p
-		}
-	}
+	host := "10.88.16.102"
+	user := "administrator"
+	pass := "abc@123ABCDE"
+	port := 53389
 
 	fmt.Printf("Connecting to %s:%d as %s\n", host, port, user)
 
@@ -103,15 +77,13 @@ func initSocket(ws *websocket.Conn) {
 	go rdpconnect(sendq, recvq, settings)
 	go processSendQ(ws, sendq)
 
-	read := make([]byte, 1024, 1024)
+	read := make([]byte, 1024)
 	for {
 		_, err := ws.Read(read)
 		if err != nil {
 			recvq <- []byte("1")
+			return
 		}
-
-		recvq <- read
-		log.Println(string(read))
 	}
 }
 

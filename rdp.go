@@ -7,6 +7,7 @@ package main
 #include <freerdp/codec/color.h>
 #include <freerdp/gdi/gdi.h>
 #include <freerdp/settings.h>
+#include <winpr/synch.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,9 +41,6 @@ static inline rdpSettings* getSettings(freerdp* instance) {
 
 extern BOOL preConnect(freerdp* instance);
 extern void postConnect(freerdp* instance);
-extern void goPrintln(char* text);
-extern void goEcho(char* text, rdpContext* context);
-extern size_t getPointerSize();
 extern BOOL primaryPatBlt(rdpContext* context, PATBLT_ORDER* patblt);
 extern BOOL primaryScrBlt(rdpContext* context, SCRBLT_ORDER* scrblt);
 extern BOOL primaryOpaqueRect(rdpContext* context, OPAQUE_RECT_ORDER* oro);
@@ -81,10 +79,18 @@ static BOOL cbBitmapUpdate(rdpContext* context, const BITMAP_UPDATE* bitmap) {
 	return bitmapUpdate(context, (BITMAP_UPDATE*)bitmap);
 }
 
+static BOOL cbPointerNew(rdpContext* context, const POINTER_NEW_UPDATE* p) { return TRUE; }
+static BOOL cbPointerCached(rdpContext* context, const POINTER_CACHED_UPDATE* p) { return TRUE; }
+static BOOL cbPointerSystem(rdpContext* context, const POINTER_SYSTEM_UPDATE* p) { return TRUE; }
+static BOOL cbPointerPosition(rdpContext* context, const POINTER_POSITION_UPDATE* p) { return TRUE; }
+static BOOL cbPointerColor(rdpContext* context, const POINTER_COLOR_UPDATE* p) { return TRUE; }
+static BOOL cbPointerLarge(rdpContext* context, const POINTER_LARGE_UPDATE* p) { return TRUE; }
+
 static BOOL cbPreConnect(freerdp* instance) {
 	rdpContext* context = instance->context;
 	rdpUpdate* update = context->update;
 	rdpPrimaryUpdate* primary = update->primary;
+	rdpPointerUpdate* pointer = update->pointer;
 
 	primary->PatBlt = cbPrimaryPatBlt;
 	primary->ScrBlt = cbPrimaryScrBlt;
@@ -96,26 +102,48 @@ static BOOL cbPreConnect(freerdp* instance) {
 	update->SetBounds = cbSetBounds;
 	update->BitmapUpdate = cbBitmapUpdate;
 
+	pointer->PointerNew = cbPointerNew;
+	pointer->PointerCached = cbPointerCached;
+	pointer->PointerSystem = cbPointerSystem;
+	pointer->PointerPosition = cbPointerPosition;
+	pointer->PointerColor = cbPointerColor;
+	pointer->PointerLarge = cbPointerLarge;
+
 	return preConnect(instance);
 }
 
 static BOOL cbPostConnect(freerdp* instance) {
+	// gdi_init initializes the cache subsystem (including pointer cache).
+	// Without it, context->cache is NULL and pointer updates crash.
+	if (!gdi_init(instance, PIXEL_FORMAT_XRGB32))
+		return FALSE;
+
+	// Re-register our own update callbacks after gdi_init, which would
+	// have overwritten them with GDI defaults.
+	rdpContext* context = instance->context;
+	rdpUpdate* update = context->update;
+	rdpPrimaryUpdate* primary = update->primary;
+	rdpPointerUpdate* pointer = update->pointer;
+
+	primary->PatBlt = cbPrimaryPatBlt;
+	primary->ScrBlt = cbPrimaryScrBlt;
+	primary->OpaqueRect = cbPrimaryOpaqueRect;
+	primary->MultiOpaqueRect = cbPrimaryMultiOpaqueRect;
+
+	update->BeginPaint = cbBeginPaint;
+	update->EndPaint = cbEndPaint;
+	update->SetBounds = cbSetBounds;
+	update->BitmapUpdate = cbBitmapUpdate;
+
+	pointer->PointerNew = cbPointerNew;
+	pointer->PointerCached = cbPointerCached;
+	pointer->PointerSystem = cbPointerSystem;
+	pointer->PointerPosition = cbPointerPosition;
+	pointer->PointerColor = cbPointerColor;
+	pointer->PointerLarge = cbPointerLarge;
+
 	postConnect(instance);
-
-	rdpPointer p;
-	memset(&p, 0, sizeof(p));
-
-	p.size = getPointerSize();
-
-	//p.New = cbPointer_New;
-	//p.Free = cbPointer_Free;
-	//p.Set = cbPointer_Set;
-	//p.SetNull = cbPointer_SetNull;
-	//p.SetDefault = cbPointer_SetDefault;
-
-	graphics_register_pointer(instance->context->graphics, &p);
-
-	return 1;
+	return TRUE;
 }
 
 static BITMAP_DATA* nextBitmapRectangle(BITMAP_UPDATE* bitmap, int i) {
@@ -130,6 +158,15 @@ static void bindCallbacks(freerdp* instance) {
 	instance->PreConnect = cbPreConnect;
 	instance->PostConnect = cbPostConnect;
 }
+
+static BOOL checkEventHandles(freerdp* instance) {
+	HANDLE events[64] = {0};
+	DWORD nCount = freerdp_get_event_handles(instance->context, events, 64);
+	if (nCount == 0) return FALSE;
+	DWORD status = WaitForMultipleObjects(nCount, events, FALSE, 100);
+	if (status == WAIT_FAILED) return FALSE;
+	return freerdp_check_event_handles(instance->context);
+}
 */
 import (
 	"C"
@@ -138,7 +175,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"reflect"
+	"runtime"
+	"sync"
 	"unsafe"
 )
 
@@ -201,36 +239,68 @@ type rdpConnectionSettings struct {
 	port     int
 }
 
-type rdpContext struct {
-	_p       C.rdpContext
-	recvq    chan []byte
+// rdpContextData holds all Go-managed data for one RDP connection.
+// It lives entirely in Go memory, so the GC can track it properly.
+// We never store Go pointers inside C-allocated memory (CGo violation).
+type rdpContextData struct {
 	sendq    chan []byte
+	recvq    chan []byte
 	settings *rdpConnectionSettings
 }
 
-type rdpPointer struct {
-	pointer *C.rdpPointer
-	id      int
+// Global registry: C rdpContext pointer value → Go data.
+// The key is a uintptr (raw address), NOT a Go pointer, so it is safe
+// to store in a Go map even though it came from C.
+var (
+	contextMu   sync.Mutex
+	contextMap  = make(map[uintptr]*rdpContextData)
+)
+
+func registerCtx(ctx *C.rdpContext, d *rdpContextData) {
+	contextMu.Lock()
+	contextMap[uintptr(unsafe.Pointer(ctx))] = d
+	contextMu.Unlock()
+}
+
+func unregisterCtx(ctx *C.rdpContext) {
+	contextMu.Lock()
+	delete(contextMap, uintptr(unsafe.Pointer(ctx)))
+	contextMu.Unlock()
+}
+
+func lookupCtx(ctx *C.rdpContext) *rdpContextData {
+	contextMu.Lock()
+	d := contextMap[uintptr(unsafe.Pointer(ctx))]
+	contextMu.Unlock()
+	return d
 }
 
 func rdpconnect(sendq chan []byte, recvq chan []byte, settings *rdpConnectionSettings) {
-	var instance *C.freerdp
+	// Lock the OS thread: FreeRDP's transport/TLS uses thread-local state,
+	// so all FreeRDP calls must happen on the same OS thread.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 
 	fmt.Println("RDP Connecting...")
 
-	instance = C.freerdp_new()
-
+	instance := C.freerdp_new()
 	C.bindCallbacks(instance)
-	instance.ContextSize = C.size_t(unsafe.Sizeof(rdpContext{}))
+
+	// Use the native C rdpContext size — no extra Go fields in C memory.
+	instance.ContextSize = C.size_t(C.sizeof_rdpContext)
 	C.freerdp_context_new(instance)
 
-	var context *rdpContext
-	context = (*rdpContext)(unsafe.Pointer(instance.context))
-	context.sendq = sendq
-	context.recvq = recvq
-	context.settings = settings
+	// Register Go-managed data in a global map keyed by the C context pointer.
+	// This is the CGo-safe alternative to embedding Go pointers in C memory.
+	data := &rdpContextData{sendq: sendq, recvq: recvq, settings: settings}
+	registerCtx(instance.context, data)
+	defer unregisterCtx(instance.context)
 
-	C.freerdp_connect(instance)
+	if C.freerdp_connect(instance) == 0 {
+		fmt.Println("RDP connection failed")
+		C.freerdp_free(instance)
+		return
+	}
 
 	mainEventLoop := true
 
@@ -250,13 +320,8 @@ func rdpconnect(sendq chan []byte, recvq chan []byte, settings *rdpConnectionSet
 					// Manual disconnections and such
 					fmt.Println("Disconnecting (manual)")
 					mainEventLoop = false
-					break
 				case 5:
 					// Another user connected
-					break
-				default:
-					// Unknown error?
-					break
 				}
 			}
 			if int(C.freerdp_shall_disconnect(instance)) != 0 {
@@ -264,9 +329,8 @@ func rdpconnect(sendq chan []byte, recvq chan []byte, settings *rdpConnectionSet
 				mainEventLoop = false
 			}
 			if mainEventLoop {
-				C.freerdp_check_fds(instance)
+				C.checkEventHandles(instance)
 			}
-			C.usleep(1000)
 		}
 	}
 	C.freerdp_free(instance)
@@ -276,17 +340,14 @@ func sendBinary(sendq chan []byte, data *bytes.Buffer) {
 	sendq <- data.Bytes()
 }
 
-//export getPointerSize
-func getPointerSize() C.size_t {
-	return C.size_t(unsafe.Sizeof(rdpPointer{}))
-}
-
 //export primaryPatBlt
 func primaryPatBlt(rawContext *C.rdpContext, patblt *C.PATBLT_ORDER) C.BOOL {
-	context := (*rdpContext)(unsafe.Pointer(rawContext))
+	d := lookupCtx(rawContext)
+	if d == nil {
+		return C.TRUE
+	}
 
 	if C.GDI_BS_SOLID == patblt.brush.style {
-		// Convert color from 16-bit to 32-bit using FreeRDP 3.x API
 		color := uint32(C.convertColor(patblt.foreColor, 16, 32))
 
 		meta := primaryPatBltMeta{
@@ -301,14 +362,17 @@ func primaryPatBlt(rawContext *C.rdpContext, patblt *C.PATBLT_ORDER) C.BOOL {
 
 		buf := new(bytes.Buffer)
 		binary.Write(buf, binary.LittleEndian, meta)
-		sendBinary(context.sendq, buf)
+		sendBinary(d.sendq, buf)
 	}
 	return C.TRUE
 }
 
 //export primaryScrBlt
 func primaryScrBlt(rawContext *C.rdpContext, scrblt *C.SCRBLT_ORDER) C.BOOL {
-	context := (*rdpContext)(unsafe.Pointer(rawContext))
+	d := lookupCtx(rawContext)
+	if d == nil {
+		return C.TRUE
+	}
 
 	meta := primaryScrBltMeta{
 		WSOP_SC_SCRBLT,
@@ -323,28 +387,28 @@ func primaryScrBlt(rawContext *C.rdpContext, scrblt *C.SCRBLT_ORDER) C.BOOL {
 
 	buf := new(bytes.Buffer)
 	binary.Write(buf, binary.LittleEndian, meta)
-	sendBinary(context.sendq, buf)
+	sendBinary(d.sendq, buf)
 	return C.TRUE
 }
 
 //export primaryOpaqueRect
 func primaryOpaqueRect(rawContext *C.rdpContext, oro *C.OPAQUE_RECT_ORDER) C.BOOL {
-	context := (*rdpContext)(unsafe.Pointer(rawContext))
+	d := lookupCtx(rawContext)
+	if d == nil {
+		return C.TRUE
+	}
 
-	// Note: oro is const in C, so we can't modify it directly
-	// Convert color from 16-bit to 32-bit
 	color := C.convertColor(oro.color, 16, 32)
 
 	buf := new(bytes.Buffer)
 	binary.Write(buf, binary.LittleEndian, WSOP_SC_OPAQUERECT)
 
-	// Create a copy with converted color
 	type opaqueRectOrder struct {
-		nLeftRect  int32
-		nTopRect   int32
-		nWidth     int32
-		nHeight    int32
-		color      uint32
+		nLeftRect int32
+		nTopRect  int32
+		nWidth    int32
+		nHeight   int32
+		color     uint32
 	}
 
 	order := opaqueRectOrder{
@@ -356,15 +420,17 @@ func primaryOpaqueRect(rawContext *C.rdpContext, oro *C.OPAQUE_RECT_ORDER) C.BOO
 	}
 
 	binary.Write(buf, binary.LittleEndian, order)
-	sendBinary(context.sendq, buf)
+	sendBinary(d.sendq, buf)
 	return C.TRUE
 }
 
 //export primaryMultiOpaqueRect
 func primaryMultiOpaqueRect(rawContext *C.rdpContext, moro *C.MULTI_OPAQUE_RECT_ORDER) C.BOOL {
-	context := (*rdpContext)(unsafe.Pointer(rawContext))
+	d := lookupCtx(rawContext)
+	if d == nil {
+		return C.TRUE
+	}
 
-	// Convert color from 16-bit to 32-bit using FreeRDP 3.x API
 	color := C.convertColor(moro.color, 16, 32)
 
 	buf := new(bytes.Buffer)
@@ -373,104 +439,109 @@ func primaryMultiOpaqueRect(rawContext *C.rdpContext, moro *C.MULTI_OPAQUE_RECT_
 	binary.Write(buf, binary.LittleEndian, int32(moro.numRectangles))
 
 	var r *C.DELTA_RECT
-	var i int
-	for i = 1; i <= int(moro.numRectangles); i++ {
+	for i := 1; i <= int(moro.numRectangles); i++ {
 		r = C.nextMultiOpaqueRectangle(moro, C.int(i))
 		binary.Write(buf, binary.LittleEndian, r)
 	}
 
-	sendBinary(context.sendq, buf)
+	sendBinary(d.sendq, buf)
 	return C.TRUE
 }
 
 //export beginPaint
 func beginPaint(rawContext *C.rdpContext) C.BOOL {
-	context := (*rdpContext)(unsafe.Pointer(rawContext))
+	d := lookupCtx(rawContext)
+	if d == nil {
+		return C.TRUE
+	}
 	buf := new(bytes.Buffer)
 	binary.Write(buf, binary.LittleEndian, WSOP_SC_BEGINPAINT)
-	sendBinary(context.sendq, buf)
+	sendBinary(d.sendq, buf)
 	return C.TRUE
 }
 
 //export endPaint
 func endPaint(rawContext *C.rdpContext) C.BOOL {
-	context := (*rdpContext)(unsafe.Pointer(rawContext))
+	d := lookupCtx(rawContext)
+	if d == nil {
+		return C.TRUE
+	}
 	buf := new(bytes.Buffer)
 	binary.Write(buf, binary.LittleEndian, WSOP_SC_ENDPAINT)
-	sendBinary(context.sendq, buf)
+	sendBinary(d.sendq, buf)
 	return C.TRUE
 }
 
 //export setBounds
 func setBounds(rawContext *C.rdpContext, bounds *C.rdpBounds) C.BOOL {
-	context := (*rdpContext)(unsafe.Pointer(rawContext))
-	buf := new(bytes.Buffer)
-
+	d := lookupCtx(rawContext)
+	if d == nil {
+		return C.TRUE
+	}
 	if bounds != nil {
+		buf := new(bytes.Buffer)
 		binary.Write(buf, binary.LittleEndian, WSOP_SC_SETBOUNDS)
 		binary.Write(buf, binary.LittleEndian, bounds)
-		sendBinary(context.sendq, buf)
+		sendBinary(d.sendq, buf)
 	}
 	return C.TRUE
 }
 
 //export bitmapUpdate
 func bitmapUpdate(rawContext *C.rdpContext, bitmap *C.BITMAP_UPDATE) C.BOOL {
-	context := (*rdpContext)(unsafe.Pointer(rawContext))
+	d := lookupCtx(rawContext)
+	if d == nil {
+		return C.TRUE
+	}
 
-	var bmd *C.BITMAP_DATA
-	var i int
-
-	for i = 0; i < int(bitmap.number); i++ {
-		bmd = C.nextBitmapRectangle(bitmap, C.int(i))
+	for i := 0; i < int(bitmap.number); i++ {
+		bmd := C.nextBitmapRectangle(bitmap, C.int(i))
 
 		buf := new(bytes.Buffer)
 
 		meta := bitmapUpdateMeta{
-			WSOP_SC_BITMAP,                           // op
-			uint32(bmd.destLeft),                     // x
-			uint32(bmd.destTop),                      // y
-			uint32(bmd.width),                        // w
-			uint32(bmd.height),                       // h
-			uint32(bmd.destRight - bmd.destLeft + 1), // dw
-			uint32(bmd.destBottom - bmd.destTop + 1), // dh
-			uint32(bmd.bitsPerPixel),                 // bpp
-			uint32(bmd.compressed),                   // cf
-			uint32(bmd.bitmapLength),                 // sz
+			WSOP_SC_BITMAP,
+			uint32(bmd.destLeft),
+			uint32(bmd.destTop),
+			uint32(bmd.width),
+			uint32(bmd.height),
+			uint32(bmd.destRight - bmd.destLeft + 1),
+			uint32(bmd.destBottom - bmd.destTop + 1),
+			uint32(bmd.bitsPerPixel),
+			uint32(bmd.compressed),
+			uint32(bmd.bitmapLength),
 		}
 		if int(bmd.compressed) == 0 {
-			// Use FreeRDP 3.x helper function to flip image
 			C.flipImageData(bmd.bitmapDataStream, C.int(bmd.width), C.int(bmd.height), C.int(bmd.bitsPerPixel))
 		}
 
 		binary.Write(buf, binary.LittleEndian, meta)
 
-		// Unsafe copy bmd.bitmapLength bytes out of bmd.bitmapDataStream
-		var bitmapDataStream []byte
 		clen := int(bmd.bitmapLength)
-		bitmapDataStream = (*[1 << 30]byte)(unsafe.Pointer(bmd.bitmapDataStream))[:clen]
-		(*reflect.SliceHeader)(unsafe.Pointer(&bitmapDataStream)).Cap = clen
+		bitmapDataStream := unsafe.Slice((*byte)(unsafe.Pointer(bmd.bitmapDataStream)), clen)
 		binary.Write(buf, binary.LittleEndian, bitmapDataStream)
 
-		sendBinary(context.sendq, buf)
+		sendBinary(d.sendq, buf)
 	}
 	return C.TRUE
 }
 
 //export postConnect
-func postConnect(instance *C.freerdp) {
+func postConnect(_ *C.freerdp) {
 	fmt.Println("Connected.")
 }
 
 //export preConnect
 func preConnect(instance *C.freerdp) C.BOOL {
-	context := (*rdpContext)(unsafe.Pointer(instance.context))
+	d := lookupCtx(instance.context)
+	if d == nil {
+		return C.FALSE
+	}
 	settings := C.getSettings(instance)
 
-	// 设置连接参数 - 使用 FreeRDP 3.x settings API
-	hostname := C.CString(*context.settings.hostname)
-	username := C.CString(*context.settings.username)
-	password := C.CString(*context.settings.password)
+	hostname := C.CString(*d.settings.hostname)
+	username := C.CString(*d.settings.username)
+	password := C.CString(*d.settings.password)
 	defer C.free(unsafe.Pointer(hostname))
 	defer C.free(unsafe.Pointer(username))
 	defer C.free(unsafe.Pointer(password))
@@ -478,21 +549,24 @@ func preConnect(instance *C.freerdp) C.BOOL {
 	C.freerdp_settings_set_string(settings, C.FreeRDP_ServerHostname, hostname)
 	C.freerdp_settings_set_string(settings, C.FreeRDP_Username, username)
 	C.freerdp_settings_set_string(settings, C.FreeRDP_Password, password)
-	C.freerdp_settings_set_uint32(settings, C.FreeRDP_DesktopWidth, C.UINT32(context.settings.width))
-	C.freerdp_settings_set_uint32(settings, C.FreeRDP_DesktopHeight, C.UINT32(context.settings.height))
-	C.freerdp_settings_set_uint32(settings, C.FreeRDP_ServerPort, C.UINT32(context.settings.port))
+	C.freerdp_settings_set_uint32(settings, C.FreeRDP_DesktopWidth, C.UINT32(d.settings.width))
+	C.freerdp_settings_set_uint32(settings, C.FreeRDP_DesktopHeight, C.UINT32(d.settings.height))
+	C.freerdp_settings_set_uint32(settings, C.FreeRDP_ServerPort, C.UINT32(d.settings.port))
 	C.freerdp_settings_set_bool(settings, C.FreeRDP_IgnoreCertificate, C.TRUE)
 	C.freerdp_settings_set_uint32(settings, C.FreeRDP_ColorDepth, 16)
+
+	// Security settings - disable NLA and TLS, use RDP security
+	C.freerdp_settings_set_bool(settings, C.FreeRDP_NlaSecurity, C.FALSE)
+	C.freerdp_settings_set_bool(settings, C.FreeRDP_TlsSecurity, C.FALSE)
+	C.freerdp_settings_set_bool(settings, C.FreeRDP_RdpSecurity, C.TRUE)
+	C.freerdp_settings_set_bool(settings, C.FreeRDP_UseRdpSecurityLayer, C.TRUE)
 
 	// Performance flags
 	perfFlags := C.PERF_DISABLE_WALLPAPER | C.PERF_DISABLE_THEMING |
 		C.PERF_DISABLE_MENUANIMATIONS | C.PERF_DISABLE_FULLWINDOWDRAG
 	C.freerdp_settings_set_uint32(settings, C.FreeRDP_PerformanceFlags, C.UINT32(perfFlags))
 
-	// Connection type
 	C.freerdp_settings_set_uint32(settings, C.FreeRDP_ConnectionType, C.CONNECTION_TYPE_BROADBAND_HIGH)
-
-	// Other settings
 	C.freerdp_settings_set_bool(settings, C.FreeRDP_RemoteFxCodec, C.FALSE)
 	C.freerdp_settings_set_bool(settings, C.FreeRDP_FastPathOutput, C.TRUE)
 	C.freerdp_settings_set_uint32(settings, C.FreeRDP_FrameAcknowledge, 1)
@@ -500,8 +574,6 @@ func preConnect(instance *C.freerdp) C.BOOL {
 	C.freerdp_settings_set_uint32(settings, C.FreeRDP_GlyphSupportLevel, C.GLYPH_SUPPORT_FULL)
 	C.freerdp_settings_set_bool(settings, C.FreeRDP_BitmapCacheV3Enabled, C.FALSE)
 	C.freerdp_settings_set_uint32(settings, C.FreeRDP_OffscreenSupportLevel, 0)
-
-	// Order support settings are typically handled internally by FreeRDP 3.x
 
 	return C.TRUE
 }
