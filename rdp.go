@@ -5,6 +5,8 @@ package main
 #cgo darwin LDFLAGS: -L/usr/local/opt/freerdp/lib -lfreerdp3 -lfreerdp-client3 -lwinpr3
 #cgo linux CFLAGS: -I${SRCDIR}/install/include/freerdp3 -I${SRCDIR}/install/include/winpr3
 #cgo linux LDFLAGS: -L${SRCDIR}/install/lib -lfreerdp3 -lfreerdp-client3 -lwinpr3
+#cgo windows CFLAGS: -I${SRCDIR}/install/include/freerdp3 -I${SRCDIR}/install/include/winpr3 -D__STDC_NO_THREADS__=1
+#cgo windows LDFLAGS: -L${SRCDIR}/install/bin -lfreerdp3 -lfreerdp-client3 -lwinpr3
 #include <freerdp/freerdp.h>
 #include <freerdp/codec/color.h>
 #include <freerdp/gdi/gdi.h>
@@ -17,7 +19,9 @@ package main
 #include <freerdp/addin.h>
 #include <winpr/synch.h>
 #include <winpr/collections.h>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 #include <stdlib.h>
 #include <string.h>
 

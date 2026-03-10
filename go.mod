@@ -1,6 +1,6 @@
 module gofreerdp
 
-go 1.25
+go 1.24
 
 require (
 	github.com/tea4go/gh v1.3.4
