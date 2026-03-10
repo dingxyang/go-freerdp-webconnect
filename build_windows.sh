@@ -62,6 +62,7 @@ if [ ! -f "$FREERDP_INSTALL/bin/libfreerdp3.dll" ]; then
         -DWITH_X11=OFF \
         -DWITH_ALSA=OFF \
         -DUSE_UNWIND=OFF \
+        -DWITH_OPENSSL=OFF \
         2>&1
 
     mingw32-make -j$(nproc) 2>&1

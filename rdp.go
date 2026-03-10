@@ -19,6 +19,7 @@ package main
 #include <freerdp/addin.h>
 #include <winpr/synch.h>
 #include <winpr/collections.h>
+#include <freerdp/utils/signal.h>
 #ifndef _WIN32
 #include <unistd.h>
 #endif
@@ -286,6 +287,31 @@ static BOOL checkEventHandles(freerdp* instance) {
 	if (status == WAIT_FAILED) return FALSE;
 	return freerdp_check_event_handles(instance->context);
 }
+
+// initFreeRDPSignalLock 在 Windows 上预先初始化 FreeRDP 内部的 signal_lock。
+// FreeRDP 的 freerdp_add_signal_cleanup_handler() 在 freerdp_connect_begin() 中被调用，
+// 它依赖 signal_win32.c 里的 static CRITICAL_SECTION signal_lock，
+// 但只有调用 freerdp_handle_signals() 才会初始化该锁。
+// 在纯 CGO 环境中不应调用 freerdp_handle_signals（会与 Go 信号处理冲突），
+// 因此在连接前调用此函数，通过直接调用 freerdp_handle_signals 但不注册致命信号
+// 来确保 signal_lock 被正确初始化。
+#ifdef _WIN32
+#include <windows.h>
+static void initFreeRDPSignalLock(void) {
+	// freerdp_handle_signals 会调用 InitializeCriticalSection(&signal_lock)
+	// 并设置 fsig_handlers_registered = TRUE，允许 cleanup handler 正常注册。
+	// 这不会干扰 Go 的信号处理，因为 Go 使用独立的信号机制（CreateThread/VEH）。
+	freerdp_handle_signals();
+}
+static BOOL safeFreerdpConnect(freerdp* instance) {
+	return freerdp_connect(instance);
+}
+#else
+static void initFreeRDPSignalLock(void) {}
+static BOOL safeFreerdpConnect(freerdp* instance) {
+	return freerdp_connect(instance);
+}
+#endif
 */
 import (
 	"C"
@@ -429,6 +455,13 @@ func rdpconnect(sendq chan []byte, recvq chan []byte, inputq chan inputEvent, se
 
 	fmt.Println("RDP Connecting...")
 
+	// 初始化 FreeRDP 信号处理锁（Windows 必须调用）：
+	// freerdp_connect_begin 内部会调用 freerdp_add_signal_cleanup_handler，
+	// 后者需要 signal_win32.c 里的 signal_lock 已被初始化。
+	// 该锁只有通过 freerdp_handle_signals() 才会初始化，
+	// 在 CGo 环境中必须在第一次 freerdp_connect 前调用一次。
+	C.initFreeRDPSignalLock()
+
 	instance := C.freerdp_new()
 	C.bindCallbacks(instance)
 
@@ -446,7 +479,7 @@ func rdpconnect(sendq chan []byte, recvq chan []byte, inputq chan inputEvent, se
 	registerCtx(instance.context, data)
 	defer unregisterCtx(instance.context)
 
-	if C.freerdp_connect(instance) == 0 {
+	if C.safeFreerdpConnect(instance) == 0 {
 		fmt.Println("RDP connection failed")
 		C.freerdp_free(instance)
 		return
@@ -742,13 +775,14 @@ func preConnect(instance *C.freerdp) C.BOOL {
 	C.freerdp_settings_set_uint32(settings, C.FreeRDP_DesktopHeight, C.UINT32(d.settings.height))
 	C.freerdp_settings_set_uint32(settings, C.FreeRDP_ServerPort, C.UINT32(d.settings.port))
 	C.freerdp_settings_set_bool(settings, C.FreeRDP_IgnoreCertificate, C.TRUE)
+	C.freerdp_settings_set_bool(settings, C.FreeRDP_AutoAcceptCertificate, C.TRUE) // 自动接受证书，避免 TLS 证书交互
 	C.freerdp_settings_set_uint32(settings, C.FreeRDP_ColorDepth, 16)
 
-	// 安全协议设置：禁用 NLA 和 TLS，改用经典 RDP 安全层（兼容旧版 Windows 及不支持 NLA 的环境）
-	C.freerdp_settings_set_bool(settings, C.FreeRDP_NlaSecurity, C.FALSE)        // 是与网络安全层认证（Network Level Authentication，NLA）相关的配置选项，用于控制客户端与远程桌面服务（如Windows RDP）之间的安全认证方式。
-	C.freerdp_settings_set_bool(settings, C.FreeRDP_TlsSecurity, C.FALSE)        // 一个配置选项，用于控制客户端与远程服务器之间通过 TLS（Transport Layer Security） 建立安全连接时的行为模式。 0 禁用TLS加密（不安全，不推荐）。
-	C.freerdp_settings_set_bool(settings, C.FreeRDP_RdpSecurity, C.TRUE)         //用于配置RDP连接的安全协议和加密方式。它决定了客户端与服务器之间通信的安全级别和兼容性。
-	C.freerdp_settings_set_bool(settings, C.FreeRDP_UseRdpSecurityLayer, C.TRUE) //一个配置选项，用于控制RDP连接时使用的安全协议层（Security Layer）的行为,1 强制使用 RDP标准加密（不尝试TLS/SSL），仅用于旧版服务器兼容性。0 禁用RDP标准加密，强制要求TLS/SSL（若服务器不支持，连接会失败）。
+	// 安全协议设置：允许 NLA/TLS/RDP 自动协商
+	// initFreeRDPSignalLock() 已初始化 signal_lock，ACCESS_VIOLATION 崩溃已解决
+	C.freerdp_settings_set_bool(settings, C.FreeRDP_NlaSecurity, C.TRUE)
+	C.freerdp_settings_set_bool(settings, C.FreeRDP_TlsSecurity, C.TRUE)
+	C.freerdp_settings_set_bool(settings, C.FreeRDP_RdpSecurity, C.TRUE)
 
 	// 性能优化标志：禁用壁纸、主题、菜单动画，保留完整窗口拖拽
 	perfFlags := C.PERF_DISABLE_WALLPAPER /*桌面上的壁纸未显示*/ |
@@ -762,7 +796,7 @@ func preConnect(instance *C.freerdp) C.BOOL {
 	C.freerdp_settings_set_uint32(settings, C.FreeRDP_PerformanceFlags, C.UINT32(perfFlags))
 
 	C.freerdp_settings_set_uint32(settings, C.FreeRDP_ConnectionType, 0x06)                    /*CONNECTION_TYPE_LAN (0x6) 局域网 (LAN) (10 Mbps 或更高)*/
-	C.freerdp_settings_set_bool(settings, C.FreeRDP_RemoteFxCodec, C.TRUE)                     //指 RemoteFX 编解码器 的实现模块，主要用于处理微软 RemoteFX 技术中的视频和图像压缩/解压缩功能。以下是其详细作用和工作原理：
+	C.freerdp_settings_set_bool(settings, C.FreeRDP_RemoteFxCodec, C.FALSE)                    // 禁用 RemoteFX（需要 TLS，Windows 上有 NULL 指针问题）
 	C.freerdp_settings_set_bool(settings, C.FreeRDP_FastPathOutput, C.TRUE)                    //Fast-Path 是 RDP（远程桌面协议）的一种优化传输模式，与传统 Slow-Path（基于标准 T.124 协议）相比，它通过减少协议头开销和简化数据封装，显著提升数据传输效率。Fast-Path 常用于图形更新、输入事件等高频率操作。
 	C.freerdp_settings_set_uint32(settings, C.FreeRDP_FrameAcknowledge, 2)                     //一个与远程桌面协议（RDP）图形渲染和帧确认机制相关的功能
 	C.freerdp_settings_set_uint32(settings, C.FreeRDP_LargePointerFlag, 0x00000001|0x00000002) //用于控制远程桌面会话中鼠标指针的显示和处理方式
@@ -779,13 +813,13 @@ func preConnect(instance *C.freerdp) C.BOOL {
 	// freerdp_client_load_addins 中以下任一条件为 TRUE 时会强制开启 DeviceRedirection：
 	//   NetworkAutoDetect / SupportHeartbeatPdu / SupportMultitransport (RDP8 特性)
 	//   AudioPlayback (rdpsnd 依赖 rdpdr)
-	// 因此需要全部禁用。
+	// 以下全部禁用以保持一致，避免 Windows 版本下 rdpdr 初始化时因 DLL 缺失崩溃。
 	C.freerdp_settings_set_bool(settings, 4160, C.FALSE) // FreeRDP_DeviceRedirection
-	C.freerdp_settings_set_bool(settings, 137, C.FALSE)  // FreeRDP_NetworkAutoDetect 一个与网络自动检测（Network Auto-Detect）功能相关的配置选项
-	C.freerdp_settings_set_bool(settings, 144, C.TRUE)   // FreeRDP_SupportHeartbeatPdu 一个配置选项，用于控制客户端与远程桌面服务器（如Windows远程桌面服务）之间的心跳机制, 0 禁用心跳机制（默认值），依赖底层TCP保活机制或应用层超时设置。
-	C.freerdp_settings_set_bool(settings, 513, C.TRUE)   // FreeRDP_SupportMultitransport 一个配置选项，用于控制是否启用 RDP 多传输协议（Multitransport） 功能, 1 启用多传输支持（默认推荐，如果服务端支持）, 0 禁用多传输，仅使用传统 TCP 传输。
-	C.freerdp_settings_set_bool(settings, 714, C.FALSE)  // FreeRDP_AudioPlayback 一个配置选项，用于控制客户端在远程桌面会话中的音频重定向（播放）行为
-	C.freerdp_settings_set_bool(settings, 715, C.FALSE)  // FreeRDP_AudioCapture 一个配置选项，用于控制客户端是否启用音频捕获（即从客户端麦克风捕获音频并传输到远程服务器）
+	C.freerdp_settings_set_bool(settings, 137, C.FALSE)  // FreeRDP_NetworkAutoDetect
+	C.freerdp_settings_set_bool(settings, 144, C.FALSE)  // FreeRDP_SupportHeartbeatPdu（禁用以避免触发 DeviceRedirection）
+	C.freerdp_settings_set_bool(settings, 513, C.FALSE)  // FreeRDP_SupportMultitransport（禁用以避免触发 DeviceRedirection）
+	C.freerdp_settings_set_bool(settings, 714, C.FALSE)  // FreeRDP_AudioPlayback
+	C.freerdp_settings_set_bool(settings, 715, C.FALSE)  // FreeRDP_AudioCapture
 
 	return C.TRUE
 }

@@ -172,6 +172,7 @@ http://localhost:54455/index-debug.html
 | `-Wno-incompatible-pointer-types` | 忽略 SSPI 回调函数指针类型不匹配警告 |
 | `-DWITH_SSE2=OFF -DWITH_SIMD=OFF` | 避免 AVX intrinsics 内联汇编编译错误 |
 | `-DUSE_UNWIND=OFF` | 避免依赖 Linux-only 的 `dlfcn.h` |
+| `-DWITH_OPENSSL=OFF` | 避免 `libfreerdp3.dll` 静态内嵌 OpenSSL（与 `libssl-3-x64.dll` 双重链接导致崩溃） |
 | `TEMP=/c/Temp TMP=/c/Temp` | 修复 GCC 在某些 Windows 路径下的临时文件权限问题 |
 | `-G "MinGW Makefiles"` | 使用 MinGW 的 `mingw32-make`，而非 Visual Studio |
 | `-DWITH_CLIENT=OFF -DWITH_SERVER=OFF` | 不编译 FreeRDP 命令行客户端和服务端，只编译库 |
@@ -210,6 +211,171 @@ go mod download
 ```
 
 ---
+
+## 故障排查记录
+
+本节记录实际调试过程中遇到的深层问题及根因分析，供后续维护参考。
+
+---
+
+### 问题一：运行时 `Exception 0xc0000005` ACCESS_VIOLATION 崩溃
+
+**现象**
+
+执行 `run_windows.sh --host=<IP> --port=3389 ...` 后，通过浏览器发起 WebSocket 连接，程序立即崩溃并输出：
+
+```
+Exception 0xc0000005 0x1 0x24 0x7ff8fd3f982d
+PC=0x7ff8fd3f982d
+signal arrived during external code execution
+
+main._Cfunc_safeFreerdpConnect(...)
+    rdp.go:471
+```
+
+崩溃地址 `0x7ff8fd3f982d` 经 `dbghelp.dll` 符号解析定位为 `ntdll.dll!RtlInitializeResource+0x94d`，对应指令：
+
+```asm
+cmp rax, -1
+je  skip
+inc DWORD PTR [rax+0x24]   ; rax=0x0 → ACCESS_VIOLATION
+```
+
+**根因分析**
+
+调用链为：
+
+```
+freerdp_connect()
+  └─ freerdp_connect_begin()
+       └─ freerdp_add_signal_cleanup_handler()
+            └─ fsig_lock()
+                 └─ EnterCriticalSection(&signal_lock)  ← 崩溃点
+```
+
+`signal_lock` 是 `libfreerdp/utils/signal_win32.c` 中的 `static CRITICAL_SECTION`，**必须通过 `freerdp_handle_signals()` 显式初始化**。在 CGO 嵌入式调用场景下，`freerdp_handle_signals()` 从未被调用，`signal_lock` 保持零值（未初始化状态）。对未初始化的 `CRITICAL_SECTION` 调用 `EnterCriticalSection`，Windows 内部的 `RtlInitializeResource` 会尝试访问 `NULL+0x24`，触发 ACCESS_VIOLATION。
+
+注：Go runtime 内置的 VEH（向量异常处理器）优先级高于用户注册的 VEH，无法通过 `AddVectoredExceptionHandler` 拦截该异常。
+
+**解决方案**
+
+在 [rdp.go](rdp.go) 的 CGO 代码段添加初始化函数，并在每次调用 `freerdp_new()` 之前执行：
+
+```c
+// rdp.go CGO preamble 中
+#include <freerdp/utils/signal.h>
+
+static void initFreeRDPSignalLock(void) {
+    freerdp_handle_signals();  // 初始化 signal_lock CRITICAL_SECTION
+}
+```
+
+```go
+// rdpconnect() 函数开头
+C.initFreeRDPSignalLock()   // 必须在 freerdp_new() 之前调用
+instance := C.freerdp_new()
+```
+
+`freerdp_handle_signals()` 会调用 `InitializeCriticalSection(&signal_lock)` 并注册信号处理器。该调用不会干扰 Go 的信号处理机制（Go 通过独立的 SEH/VEH 机制管理信号）。
+
+---
+
+### 问题二：`libfreerdp3.dll` 内嵌 OpenSSL 导致双重链接
+
+**现象**
+
+未添加 `-DWITH_OPENSSL=OFF` 时，用 `nm` 检查编译产物：
+
+```bash
+nm install/bin/libfreerdp3.dll | grep "SSL_CTX_new"
+# 输出：
+000000030074cad8 T SSL_CTX_new       ← 静态编译进 DLL 的实现
+00000003008452e8 I __imp_SSL_CTX_new ← 同时动态导入 libssl-3-x64.dll
+```
+
+同一个 `SSL_CTX_new` 函数存在两份实现：`libfreerdp3.dll` 自带一份静态实现，同时又从 `libssl-3-x64.dll` 动态导入。两份 OpenSSL 实例共存，内部状态相互污染，导致 NULL 指针崩溃。
+
+**解决方案**
+
+在 [build_windows.sh](build_windows.sh) 的 cmake 命令中添加：
+
+```bash
+-DWITH_OPENSSL=OFF
+```
+
+该参数使 `libfreerdp3.dll` 不直接依赖 OpenSSL。`libwinpr3.dll` 仍然依赖 OpenSSL（通过跳转桩调用 `libssl-3-x64.dll`），但此时只有一份 OpenSSL 实例，双重链接问题消除。
+
+重新编译后验证：
+
+```bash
+nm install/bin/libfreerdp3.dll | grep "SSL_CTX"
+# 无输出 ✅
+```
+
+> **注意**：`libwinpr3.dll` 中的 `T SSL_CTX_new` 是跳转桩（thunk），反汇编可见 `jmp *__imp_SSL_CTX_new`，并非静态实现，属于正常现象。
+
+---
+
+### 问题三：运行时需要额外的 MinGW DLL
+
+**现象**
+
+直接运行 `gofreerdp-windows.exe` 时提示缺少 DLL，或程序无法启动。
+
+**原因**
+
+`libwinpr3.dll` 依赖以下 MinGW 运行时库，这些文件不在 `install/bin/` 中：
+
+```
+libssl-3-x64.dll
+libcrypto-3-x64.dll
+zlib1.dll
+libgcc_s_seh-1.dll
+```
+
+**解决方案**
+
+从 MSYS2 的 MinGW 目录复制到 `install/bin/`：
+
+```bash
+MINGW_BIN="/c/DevDisk/DevTools/msys64/mingw64/bin"
+cp $MINGW_BIN/libssl-3-x64.dll   install/bin/
+cp $MINGW_BIN/libcrypto-3-x64.dll install/bin/
+cp $MINGW_BIN/zlib1.dll           install/bin/
+cp $MINGW_BIN/libgcc_s_seh-1.dll  install/bin/
+```
+
+`run_windows.sh` 脚本已通过 `PATH` 设置自动覆盖此需求，手动运行时需确保上述文件可被系统找到。
+
+---
+
+### 问题四：FreeRDP 安全协议协商（服务器拒绝经典 RDP）
+
+**现象**
+
+将安全协议设置为仅允许经典 RDP（`NlaSecurity=FALSE, TlsSecurity=FALSE`）时，连接失败：
+
+```
+[ERROR][transport_read_layer]: ERRCONNECT_CONNECT_TRANSPORT_FAILED [0x0002000D]
+```
+
+日志显示协商阶段服务器断开连接。
+
+**原因**
+
+Windows Server 2016/2019/2022 默认要求 NLA（网络层认证）。服务器在协商阶段拒绝了仅支持经典 RDP 安全层的客户端。
+
+**解决方案**
+
+启用 NLA/TLS/RDP 三路自动协商（FreeRDP 按优先级自动选择）：
+
+```go
+C.freerdp_settings_set_bool(settings, C.FreeRDP_NlaSecurity, C.TRUE)
+C.freerdp_settings_set_bool(settings, C.FreeRDP_TlsSecurity, C.TRUE)
+C.freerdp_settings_set_bool(settings, C.FreeRDP_RdpSecurity, C.TRUE)
+```
+
+服务器会选择 `HYBRID`（NLA）协议，认证流程：TLS 握手 → NTLM 凭据交换 → RDP 会话建立。
 
 ## 目录结构
 
