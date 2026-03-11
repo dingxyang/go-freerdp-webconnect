@@ -19,6 +19,7 @@ package main
 #include <freerdp/addin.h>
 #include <winpr/synch.h>
 #include <winpr/collections.h>
+#include <winpr/wlog.h>
 #include <freerdp/utils/signal.h>
 #ifndef _WIN32
 #include <unistd.h>
@@ -277,6 +278,15 @@ static BOOL registerStaticAddinProvider(void) {
 	return freerdp_register_addin_provider(freerdp_channels_load_static_addin_entry, 0) == CHANNEL_RC_OK;
 }
 
+// 连接成功后压制 com.freerdp.core 的 ERROR 级别日志。
+// ERRINFO_LOGOFF_BY_USER 等预期断开事件会被 FreeRDP 内部以 ERROR 级别记录，
+// 而这些属于正常业务流程，并非真正的错误。连接前的 ERROR 日志（如 TLS 失败）
+// 仍会正常输出，因为此函数只在 postConnect 之后调用。
+static void suppressCoreSessionErrors(void) {
+    wLog* log = WLog_Get("com.freerdp.core");
+    if (log) WLog_SetLogLevel(log, WLOG_FATAL);
+}
+
 // 检查并处理 FreeRDP 事件句柄（最多等待 100ms）
 // 用于主事件循环中驱动 RDP 协议收发
 static BOOL checkEventHandles(freerdp* instance) {
@@ -313,9 +323,7 @@ static BOOL safeFreerdpConnect(freerdp* instance) {
 }
 #endif
 */
-import (
-	"C"
-)
+import "C"
 import (
 	"bytes"
 	"encoding/binary"
@@ -747,6 +755,10 @@ func bitmapUpdate(rawContext *C.rdpContext, bitmap *C.BITMAP_UPDATE) C.BOOL {
 //export postConnect
 func postConnect(_ *C.freerdp) {
 	fmt.Println("Connected.")
+	// 连接成功后压制 com.freerdp.core 的 ERROR 日志：
+	// 正常断开（如用户注销）会触发 ERRINFO_LOGOFF_BY_USER，
+	// FreeRDP 内部以 ERROR 级别记录，属于预期行为而非真正的错误。
+	C.suppressCoreSessionErrors()
 }
 
 // preConnect 在建立 RDP 连接前由 C 层回调，负责将 Go 侧的连接参数写入 FreeRDP 配置，
@@ -778,11 +790,12 @@ func preConnect(instance *C.freerdp) C.BOOL {
 	C.freerdp_settings_set_bool(settings, C.FreeRDP_AutoAcceptCertificate, C.TRUE) // 自动接受证书，避免 TLS 证书交互
 	C.freerdp_settings_set_uint32(settings, C.FreeRDP_ColorDepth, 16)
 
-	// 安全协议设置：允许 NLA/TLS/RDP 自动协商
-	// initFreeRDPSignalLock() 已初始化 signal_lock，ACCESS_VIOLATION 崩溃已解决
-	C.freerdp_settings_set_bool(settings, C.FreeRDP_NlaSecurity, C.TRUE)
-	C.freerdp_settings_set_bool(settings, C.FreeRDP_TlsSecurity, C.TRUE)
+	// 安全协议设置：禁用 NLA/TLS，仅启用 RDP 安全层
+	// 目标服务器不支持 TLS（BIO_do_handshake failed），强制使用 RDP 安全层
+	C.freerdp_settings_set_bool(settings, C.FreeRDP_NlaSecurity, C.FALSE)
+	C.freerdp_settings_set_bool(settings, C.FreeRDP_TlsSecurity, C.FALSE)
 	C.freerdp_settings_set_bool(settings, C.FreeRDP_RdpSecurity, C.TRUE)
+	C.freerdp_settings_set_bool(settings, 192, C.TRUE) // FreeRDP_UseRdpSecurityLayer=192，强制使用 RDP 安全层
 
 	// 性能优化标志：禁用壁纸、主题、菜单动画，保留完整窗口拖拽
 	perfFlags := C.PERF_DISABLE_WALLPAPER /*桌面上的壁纸未显示*/ |
