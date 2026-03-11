@@ -54,9 +54,11 @@
                         document.title = "Go FreeRDP：已连接";
                         window.removeEvent('resize', OnDesktopSize);
                         window.addEvent('resize', onConnectedResize);
+                        $('disconnectBtn').removeClass('invisible');
                         });
                 rdp.addEvent('disconnected', function() {
                         document.title = "Go FreeRDP：已断开";
+                        $('disconnectBtn').addClass('invisible');
                         window.removeEvent('resize', onConnectedResize);
                         OnDesktopSize();
                         window.addEvent('resize', OnDesktopSize);
@@ -254,6 +256,9 @@
                         $('rdpconnect').addEvent('click', function() {
                             RDPrun();
                         });
+                        $('disconnectBtn').addEvent('click', function() {
+                            if (rdp) rdp.Disconnect();
+                        });
                     } else {
                         alert('抱歉！\n您的浏览器（' + Browser.name + ' ' + Browser.version
                                 + '）尚不支持本应用所需的 HTML5 功能。\n');
@@ -265,6 +270,7 @@
         <canvas id="screen" width="640px" height="480px">
         <p class="error">抱歉，您的浏览器不支持 canvas 标签。</p>
         </canvas>
+        <button id="disconnectBtn" class="invisible">断开连接</button>
         <noscript><p class="error">请启用 JavaScript。</p></noscript>
         <table width="400px" id="maindialog" class="invisible">
             <tr>
