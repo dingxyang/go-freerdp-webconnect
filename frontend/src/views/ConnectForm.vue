@@ -101,16 +101,19 @@ async function handleConnect() {
   max-width: 400px;
   margin: 80px auto;
   padding: 32px;
-  background: #1a1a2e;
-  border-radius: 12px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(207, 10, 44, 0.12);
+  border-radius: 18px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.12);
+  backdrop-filter: blur(14px);
 }
 
 h2 {
   text-align: center;
-  color: #e0e0e0;
+  color: #111827;
   margin-bottom: 24px;
-  font-weight: 500;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .form-group {
@@ -127,47 +130,77 @@ h2 {
 
 label {
   display: block;
-  color: #aaa;
+  color: #6b7280;
   font-size: 13px;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
 input, select {
   width: 100%;
   padding: 10px 12px;
-  background: #16213e;
-  border: 1px solid #333;
-  border-radius: 6px;
-  color: #e0e0e0;
+  min-height: 42px;
+  background: #f8fafc;
+  border: 1px solid #d6deea;
+  border-radius: 10px;
+  color: #111827;
   font-size: 14px;
+  line-height: 1.4;
   box-sizing: border-box;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
 }
 input:focus, select:focus {
   outline: none;
-  border-color: #4a9eff;
+  border-color: #cf0a2c;
+  box-shadow: 0 0 0 4px rgba(207, 10, 44, 0.12);
+  background: #ffffff;
+}
+
+input::placeholder {
+  color: #9ca3af;
+}
+
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 42px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, #64748b 50%),
+    linear-gradient(135deg, #64748b 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) calc(50% - 1px),
+    calc(100% - 12px) calc(50% - 1px);
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+  cursor: pointer;
 }
 
 button {
   width: 100%;
   padding: 12px;
-  background: #4a9eff;
+  background: linear-gradient(135deg, #cf0a2c 0%, #f43f5e 100%);
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: 10px;
   font-size: 15px;
   cursor: pointer;
   margin-top: 8px;
+  box-shadow: 0 14px 28px rgba(207, 10, 44, 0.24);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
 }
 button:hover:not(:disabled) {
-  background: #3a8eef;
+  transform: translateY(-1px);
+  box-shadow: 0 18px 32px rgba(207, 10, 44, 0.28);
+  filter: saturate(1.05);
 }
 button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .error {
-  color: #ff6b6b;
+  color: #dc2626;
   font-size: 13px;
   margin-top: 8px;
   text-align: center;
@@ -175,7 +208,7 @@ button:disabled {
 
 .version {
   text-align: center;
-  color: #666;
+  color: #94a3b8;
   font-size: 11px;
   margin-top: 20px;
 }
