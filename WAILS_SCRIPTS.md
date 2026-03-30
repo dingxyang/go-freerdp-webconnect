@@ -1,5 +1,10 @@
 # Wails 三端脚本
 
+## 前端环境要求
+
+- Node.js `20.19+` 或 `22.12+`（Vite 要求）
+- npm（随 Node.js 安装）
+
 ## 依赖准备脚本
 
 - macOS: `./build_macos.sh`

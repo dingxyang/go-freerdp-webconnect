@@ -100,6 +100,7 @@ export DYLD_LIBRARY_PATH=/usr/local/opt/freerdp/lib:$DYLD_LIBRARY_PATH
 - macOS 10.15 (Catalina) 或更高版本
 - Homebrew
 - Go 1.21 或更高版本
+- Node.js 20.19+ 或 22.12+（仅在使用 Wails 前端构建/开发时需要，Vite 要求）
 
 ## 已知问题
 

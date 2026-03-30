@@ -7,7 +7,7 @@
 - Go 1.24+
 - Wails CLI (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`)
 - FreeRDP 3.x（macOS: `brew install freerdp`）
-- Node.js 18+（Vue 前端构建）
+- Node.js 20.19+ 或 22.12+（Vite 前端构建要求）
 
 ---
 

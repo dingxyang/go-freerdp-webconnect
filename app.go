@@ -39,7 +39,12 @@ func (a *App) shutdown(ctx context.Context) {
 }
 
 // Connect 由前端调用，注册 RDP 连接参数并返回 WebSocket 地址
-func (a *App) Connect(host, user, pass string, port, width, height int) string {
+func (a *App) Connect(
+	host, user, pass string,
+	port, width, height int,
+	perf, fntlm int,
+	nowallp, nowdrag, nomani, notheme, nonla, notls bool,
+) string {
 	settings := &rdpConnectionSettings{
 		hostname: &host,
 		username: &user,
@@ -47,6 +52,14 @@ func (a *App) Connect(host, user, pass string, port, width, height int) string {
 		width:    width,
 		height:   height,
 		port:     port,
+		perf:     perf,
+		fntlm:    fntlm,
+		nowallp:  nowallp,
+		nowdrag:  nowdrag,
+		nomani:   nomani,
+		notheme:  notheme,
+		nonla:    nonla,
+		notls:    notls,
 	}
 
 	token := RegisterConnection(settings)

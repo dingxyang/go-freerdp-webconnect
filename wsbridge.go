@@ -61,11 +61,25 @@ func getResolution(ws *websocket.Conn) (width int64, height int64) {
 	return width, height
 }
 
+func parseBoolParam(v string, def bool) bool {
+	if v == "" {
+		return def
+	}
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "on", "yes":
+		return true
+	case "0", "false", "off", "no":
+		return false
+	default:
+		return def
+	}
+}
+
 // processSendQ 将后端 RDP 产生的帧数据通过 WebSocket 推送给浏览器。
 // 一旦发送失败，尝试向 recvq 写入结束信号以驱动清理流程。
 func processSendQ(ws *websocket.Conn, sendq chan []byte, recvq chan []byte) {
 	for {
-		buf := <-sendq                        // 阻塞等待待发送数据
+		buf := <-sendq                         // 阻塞等待待发送数据
 		err := websocket.Message.Send(ws, buf) // 通过 WS 发送给前端
 		if err != nil {
 			select { // 非阻塞通知：下游可据此中断会话
@@ -119,12 +133,30 @@ func initSocket(ws *websocket.Conn) {
 		}
 
 		settings = &rdpConnectionSettings{
-			&host,
-			&user,
-			&pass,
-			int(width),
-			int(height),
-			port,
+			hostname: &host,
+			username: &user,
+			password: &pass,
+			width:    int(width),
+			height:   int(height),
+			port:     port,
+			perf:     0,
+			fntlm:    0,
+			nowallp:  parseBoolParam(req.FormValue("nowallp"), false),
+			nowdrag:  parseBoolParam(req.FormValue("nowdrag"), false),
+			nomani:   parseBoolParam(req.FormValue("nomani"), false),
+			notheme:  parseBoolParam(req.FormValue("notheme"), false),
+			nonla:    parseBoolParam(req.FormValue("nonla"), false),
+			notls:    parseBoolParam(req.FormValue("notls"), false),
+		}
+		if perfStr := req.FormValue("perf"); perfStr != "" {
+			if p, err := strconv.Atoi(perfStr); err == nil && p >= 0 && p <= 2 {
+				settings.perf = p
+			}
+		}
+		if fntlmStr := req.FormValue("fntlm"); fntlmStr != "" {
+			if n, err := strconv.Atoi(fntlmStr); err == nil && n >= 0 && n <= 2 {
+				settings.fntlm = n
+			}
 		}
 	}
 
@@ -132,7 +164,7 @@ func initSocket(ws *websocket.Conn) {
 
 	inputq := make(chan inputEvent, 50)           // 浏览器输入事件队列
 	go rdpconnect(sendq, recvq, inputq, settings) // 后端：建立并维护 RDP 连接
-	go processSendQ(ws, sendq, recvq)              // 前端：推送图像/数据给浏览器
+	go processSendQ(ws, sendq, recvq)             // 前端：推送图像/数据给浏览器
 
 	read := make([]byte, 1024) // 复用缓冲区承接浏览器发来的事件数据
 	for {
