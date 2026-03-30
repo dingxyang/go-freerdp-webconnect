@@ -8,7 +8,7 @@ set "MINGW_BIN=%MSYS64%\mingw64\bin"
 set "FREERDP_INSTALL=%PROJECT_ROOT%\install"
 set "FREERDP_BIN=%FREERDP_INSTALL%\bin"
 set "BUILD_BIN=%PROJECT_ROOT%\build\bin"
-set "MINGW_RUNTIME_DLLS=libssl-3-x64.dll libcrypto-3-x64.dll zlib1.dll libgcc_s_seh-1.dll"
+set "MINGW_RUNTIME_DLLS=libssl-3-x64.dll libcrypto-3-x64.dll zlib1.dll libgcc_s_seh-1.dll libwinpthread-1.dll"
 
 where wails >nul 2>nul
 if errorlevel 1 (

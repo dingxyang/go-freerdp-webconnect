@@ -16,7 +16,7 @@ set "FREERDP_TAG=3.12.0"
 set "SKIP_FREERDP=0"
 set "FORCE_FREERDP=0"
 set "NO_CLONE=0"
-set "MINGW_RUNTIME_DLLS=libssl-3-x64.dll libcrypto-3-x64.dll zlib1.dll libgcc_s_seh-1.dll"
+set "MINGW_RUNTIME_DLLS=libssl-3-x64.dll libcrypto-3-x64.dll zlib1.dll libgcc_s_seh-1.dll libwinpthread-1.dll"
 
 :parse_args
 if "%~1"=="" goto args_done

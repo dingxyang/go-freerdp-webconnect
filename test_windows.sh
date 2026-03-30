@@ -41,7 +41,7 @@ done
 # 测试 3: 检查 MinGW 运行时 DLL
 echo ""
 echo "[测试 3] 检查 MinGW 运行时库..."
-for dll in libssl-3-x64.dll libcrypto-3-x64.dll zlib1.dll libgcc_s_seh-1.dll; do
+for dll in libssl-3-x64.dll libcrypto-3-x64.dll zlib1.dll libgcc_s_seh-1.dll libwinpthread-1.dll; do
     if [ -f "$FREERDP_INSTALL/bin/$dll" ]; then
         check_pass "$dll 存在"
     else

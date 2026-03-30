@@ -331,6 +331,7 @@ libssl-3-x64.dll
 libcrypto-3-x64.dll
 zlib1.dll
 libgcc_s_seh-1.dll
+libwinpthread-1.dll
 ```
 
 **解决方案**
@@ -343,6 +344,7 @@ cp $MINGW_BIN/libssl-3-x64.dll   install/bin/
 cp $MINGW_BIN/libcrypto-3-x64.dll install/bin/
 cp $MINGW_BIN/zlib1.dll           install/bin/
 cp $MINGW_BIN/libgcc_s_seh-1.dll  install/bin/
+cp $MINGW_BIN/libwinpthread-1.dll install/bin/
 ```
 
 `run_windows.sh` 脚本已通过 `PATH` 设置自动覆盖此需求，手动运行时需确保上述文件可被系统找到。
