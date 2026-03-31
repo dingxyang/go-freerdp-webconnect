@@ -1,4 +1,4 @@
-package main
+package backend
 
 // Wails 绑定对象
 // 提供给前端调用的 Go 方法
@@ -11,21 +11,22 @@ import (
 
 // App 是 Wails 绑定对象，暴露给前端 JS 调用
 type App struct {
-	ctx    context.Context
-	wsPort int32 // WebSocket 桥接端口（atomic）
+	ctx        context.Context
+	wsPort     int32 // WebSocket 桥接端口（atomic）
+	appVersion string
 }
 
 // NewApp 创建 App 实例
-func NewApp() *App {
-	return &App{}
+func NewApp(version string) *App {
+	return &App{appVersion: version}
 }
 
-// startup 在 Wails 应用启动时调用
-func (a *App) startup(ctx context.Context) {
+// Startup 在 Wails 应用启动时调用
+func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
 
 	// 启动本地 WebSocket 桥接服务（随机端口）
-	port, err := StartWSBridge("127.0.0.1:0")
+	port, err := StartWSBridge("127.0.0.1:0", a.appVersion)
 	if err != nil {
 		fmt.Println("Failed to start WebSocket bridge:", err)
 		return
@@ -33,8 +34,8 @@ func (a *App) startup(ctx context.Context) {
 	atomic.StoreInt32(&a.wsPort, int32(port))
 }
 
-// shutdown 在 Wails 应用关闭时调用
-func (a *App) shutdown(ctx context.Context) {
+// Shutdown 在 Wails 应用关闭时调用
+func (a *App) Shutdown(ctx context.Context) {
 	fmt.Println("Application shutting down")
 }
 
@@ -71,7 +72,7 @@ func (a *App) Connect(
 // GetVersion 返回应用版本和 FreeRDP 版本
 func (a *App) GetVersion() map[string]string {
 	return map[string]string{
-		"app":     appVer,
+		"app":     a.appVersion,
 		"freerdp": GetFreeRDPVersion(),
 	}
 }

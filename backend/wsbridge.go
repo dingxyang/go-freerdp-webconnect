@@ -1,4 +1,4 @@
-package main
+package backend
 
 // WebSocket ⇄ RDP 桥接模块
 // 职责：
@@ -191,7 +191,7 @@ func initSocket(ws *websocket.Conn) {
 
 // StartWSBridge 在指定地址启动本地 WebSocket 桥接服务
 // 返回实际监听的端口号
-func StartWSBridge(listenAddr string) (int, error) {
+func StartWSBridge(listenAddr, appVersion string) (int, error) {
 	mux := http.NewServeMux()
 
 	// WebSocket 入口
@@ -201,7 +201,7 @@ func StartWSBridge(listenAddr string) (int, error) {
 	mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
-			"app":     appVer,
+			"app":     appVersion,
 			"freerdp": GetFreeRDPVersion(),
 		})
 	})

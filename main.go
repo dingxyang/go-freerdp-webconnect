@@ -9,6 +9,7 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"gofreerdp/backend"
 )
 
 //go:embed frontend/dist
@@ -21,7 +22,7 @@ var IsBeta string                // 是否为 Beta 版本，由构建注入
 var BuildTime string             // 构建时间，由构建注入
 
 func main() {
-	app := NewApp()
+	app := backend.NewApp(appVer)
 
 	err := wails.Run(&options.App{
 		Title:  "FreeRDP WebConnect",
@@ -30,8 +31,8 @@ func main() {
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
-		OnStartup:  app.startup,
-		OnShutdown: app.shutdown,
+		OnStartup:  app.Startup,
+		OnShutdown: app.Shutdown,
 		Bind: []interface{}{
 			app,
 		},

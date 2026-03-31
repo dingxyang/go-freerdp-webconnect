@@ -99,6 +99,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, watch } from 'vue'
+import { Connect, GetVersion } from '../wailsjs/go/backend/App'
 
 const emit = defineEmits<{
   connect: [wsUrl: string, width: number, height: number]
@@ -127,8 +128,7 @@ const activeTab = ref<'basic' | 'advanced'>('basic')
 
 onMounted(async () => {
   try {
-    // @ts-ignore - Wails 运行时注入的全局对象
-    version.value = await window.go.main.App.GetVersion()
+    version.value = await GetVersion() as { app: string; freerdp: string }
   } catch {
     // 非 Wails 环境忽略
   }
@@ -152,8 +152,7 @@ async function handleConnect() {
   try {
     const [w, h] = form.resolution.split('x').map(Number)
 
-    // @ts-ignore - Wails 运行时注入的全局对象
-    const wsUrl: string = await window.go.main.App.Connect(
+    const wsUrl: string = await Connect(
       form.host, form.user, form.pass, form.port, w, h,
       form.perf, form.fntlm,
       form.nowallp, form.nowdrag, form.nomani, form.notheme, form.nonla, form.notls

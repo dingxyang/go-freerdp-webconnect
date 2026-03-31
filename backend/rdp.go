@@ -1,12 +1,12 @@
-package main
+package backend
 
 /*
 #cgo darwin CFLAGS: -I/usr/local/opt/freerdp/include/freerdp3 -I/usr/local/opt/freerdp/include/winpr3
 #cgo darwin LDFLAGS: -L/usr/local/opt/freerdp/lib -lfreerdp3 -lfreerdp-client3 -lwinpr3
-#cgo linux CFLAGS: -I${SRCDIR}/install/include/freerdp3 -I${SRCDIR}/install/include/winpr3
-#cgo linux LDFLAGS: -L${SRCDIR}/install/lib -lfreerdp3 -lfreerdp-client3 -lwinpr3
-#cgo windows CFLAGS: -I${SRCDIR}/install/include/freerdp3 -I${SRCDIR}/install/include/winpr3 -D__STDC_NO_THREADS__=1
-#cgo windows LDFLAGS: -L${SRCDIR}/install/bin -lfreerdp3 -lfreerdp-client3 -lwinpr3
+#cgo linux CFLAGS: -I${SRCDIR}/../install/include/freerdp3 -I${SRCDIR}/../install/include/winpr3
+#cgo linux LDFLAGS: -L${SRCDIR}/../install/lib -lfreerdp3 -lfreerdp-client3 -lwinpr3
+#cgo windows CFLAGS: -I${SRCDIR}/../install/include/freerdp3 -I${SRCDIR}/../install/include/winpr3 -D__STDC_NO_THREADS__=1
+#cgo windows LDFLAGS: -L${SRCDIR}/../install/bin -lfreerdp3 -lfreerdp-client3 -lwinpr3
 #include <freerdp/freerdp.h>
 #include <freerdp/codec/color.h>
 #include <freerdp/gdi/gdi.h>
