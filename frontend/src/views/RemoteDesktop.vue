@@ -1,17 +1,18 @@
 <template>
-  <div class="rdp-desktop">
-    <div class="toolbar">
-      <span class="title">{{ host }} - 远程桌面</span>
-      <button class="disconnect-btn" @click="handleDisconnect">断开连接</button>
-    </div>
-    <div class="canvas-wrapper">
-      <canvas ref="canvasRef" :width="width" :height="height"></canvas>
+  <div class="rdp-desktop" ref="containerRef">
+    <div class="canvas-wrapper" :class="{ fitting: fitMode }">
+      <canvas
+        ref="canvasRef"
+        :width="width"
+        :height="height"
+        :style="canvasStyle"
+      />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { RDPClient } from '../rdp'
 
 const props = defineProps<{
@@ -19,95 +20,129 @@ const props = defineProps<{
   width: number
   height: number
   host: string
+  fitMode: boolean
 }>()
 
 const emit = defineEmits<{
   disconnected: []
+  statusChange: [status: 'connecting' | 'connected' | 'disconnected']
 }>()
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
-const client = new RDPClient()
+const containerRef = ref<HTMLDivElement | null>(null)
+const client = ref<RDPClient | null>(null)
+const containerWidth = ref(0)
+const containerHeight = ref(0)
 
-client.on('disconnected', () => {
+const canvasStyle = computed(() => {
+  if (!props.fitMode) return {}
+  if (containerWidth.value === 0 || containerHeight.value === 0) return {}
+  const scaleX = containerWidth.value / props.width
+  const scaleY = containerHeight.value / props.height
+  const scale = Math.min(scaleX, scaleY, 1) // 不放大，只缩小
+  return {
+    transform: `scale(${scale})`,
+    transformOrigin: 'top left',
+  }
+})
+
+let resizeObserver: ResizeObserver | null = null
+
+function updateContainerSize() {
+  if (!containerRef.value) return
+  const rect = containerRef.value.getBoundingClientRect()
+  containerWidth.value = rect.width
+  containerHeight.value = rect.height
+}
+
+function tryResize() {
+  if (!props.fitMode || !client.value) return
+  if (containerWidth.value > 0 && containerHeight.value > 0) {
+    const w = Math.floor(containerWidth.value)
+    const h = Math.floor(containerHeight.value)
+    client.value.resize(w, h)
+  }
+}
+
+watch(() => props.fitMode, (fit) => {
+  if (fit) {
+    updateContainerSize()
+    tryResize()
+  }
+})
+
+client.value = new RDPClient()
+
+client.value.on('connected', () => {
+  emit('statusChange', 'connected')
+})
+
+client.value.on('disconnected', () => {
+  emit('statusChange', 'disconnected')
   emit('disconnected')
 })
 
-client.on('error', (msg) => {
+client.value.on('error', (msg) => {
   console.error('RDP Error:', msg)
+  emit('statusChange', 'disconnected')
   emit('disconnected')
 })
 
 onMounted(() => {
-  if (canvasRef.value) {
-    client.connect(props.wsUrl, canvasRef.value)
+  if (canvasRef.value && client.value) {
+    emit('statusChange', 'connecting')
+    client.value.connect(props.wsUrl, canvasRef.value)
+  }
+
+  resizeObserver = new ResizeObserver(() => {
+    updateContainerSize()
+    if (props.fitMode) {
+      tryResize()
+    }
+  })
+  if (containerRef.value) {
+    resizeObserver.observe(containerRef.value)
   }
 })
 
 onUnmounted(() => {
-  client.disconnect()
+  resizeObserver?.disconnect()
+  client.value?.disconnect()
 })
 
-function handleDisconnect() {
-  client.disconnect()
+function doDisconnect() {
+  client.value?.disconnect()
 }
+
+defineExpose({ disconnect: doDisconnect })
 </script>
 
 <style scoped>
 .rdp-desktop {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
-}
-
-.toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 16px;
-  background: rgba(255, 255, 255, 0.92);
-  border-bottom: 1px solid #dbe2ea;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
-  backdrop-filter: blur(14px);
-  flex-shrink: 0;
-}
-
-.title {
-  color: #475569;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.disconnect-btn {
-  padding: 6px 16px;
-  background: #cf0a2c;
-  color: white;
-  border: none;
-  border-radius: 999px;
-  font-size: 13px;
-  cursor: pointer;
-  box-shadow: 0 10px 20px rgba(207, 10, 44, 0.2);
-  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
-}
-.disconnect-btn:hover {
-  background: #b50c2b;
-  transform: translateY(-1px);
-  box-shadow: 0 14px 24px rgba(181, 12, 43, 0.24);
-}
-
-.canvas-wrapper {
-  flex: 1;
+  width: 100%;
+  height: 100%;
   overflow: auto;
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  padding: 24px;
+  background: #0f172a;
+}
+
+.canvas-wrapper {
+  padding: 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.canvas-wrapper.fitting {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 canvas {
   display: block;
   cursor: default;
-  border-radius: 14px;
-  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.14);
 }
 </style>
