@@ -625,10 +625,11 @@ async function handleConnect() {
 .app-layout {
   display: flex;
   flex-direction: column;
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   background: #f3f4f6;
+  position: relative;
 }
 
 /* === 标题栏 === */
@@ -1164,7 +1165,7 @@ select {
 /* === 响应式 === */
 @media (max-width: 799px) {
   .form-panel {
-    position: fixed;
+    position: absolute;
     right: 0;
     top: 86px;
     bottom: 28px;
